@@ -1,3 +1,10 @@
+## Unreleased — Ownership Reconciliation C3 UI (on 0.8.65.19)
+
+- Add «تطبیق مالکیت» workspaces: request wizard, my cases, specialist queue, supervisor High Risk queue, closed/cancelled history and case detail (portal `bcrm_view=ownership` + WP admin submenu).
+- Add thin `bcrm_ownership` AJAX adapters that each call one approved C2 Workflow/OTP/Transfer command; read-only lookups reuse existing portal exposure.
+- Persian/RTL, responsive (cards on mobile), accessible dialogs/forms; FINALIZATION_FAILED offers only «ادامه نهایی‌سازی».
+- No schema, migration, state-machine, risk, SoD, OTP, hold, lock or transfer change; plugin version unchanged.
+
 ## 0.8.65.19 — Ownership Reconciliation backend
 
 - Add backend claim/review/decision/transfer commands, scoped authorization, risk and second approval.

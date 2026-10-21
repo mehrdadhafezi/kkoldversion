@@ -142,6 +142,8 @@
             select.addEventListener("change", sync); sync();
         });
         qsa("form[data-own-op]", root).forEach(function (form) {
+            // Inline, field-tied validation replaces native bubbles once JS is running.
+            form.noValidate = true;
             form.addEventListener("submit", function (e) {
                 e.preventDefault();
                 var errorHost = qs("[data-own-form-error]", form), button = qs('button[type="submit"]', form);
