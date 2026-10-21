@@ -75,6 +75,13 @@ class Biawin_CRM_Ownership_Presenter
         'CLAIM_CURRENT_PHONE' => 'شماره فعلی فاکتور هم به مقصد منتقل می‌شود. باید خود شماره را جداگانه به‌عنوان دارایی انتخاب کنید؛ پرونده پرریسک می‌شود.',
         'PROPOSE_NEW_PHONE' => 'یک شماره جدید برای فاکتور ثبت می‌شود و فقط پس از اجرای تأییدشده در پروفایل مقصد ایجاد می‌شود. اگر شماره متعلق به پروفایل مبدأ باشد باید جداگانه ادعا شود.',
     ];
+    /** Whether a phone mode moves ownership of a phone record (C2 semantics, presentation only). */
+    const PHONE_MODE_OWNERSHIP = [
+        'KEEP_CURRENT_PHONE' => 'مالکیت شماره منتقل نمی‌شود',
+        'USE_TARGET_PROFILE_PHONE' => 'مالکیت شماره منتقل نمی‌شود',
+        'CLAIM_CURRENT_PHONE' => 'مالکیت خود شماره منتقل می‌شود (پرونده پرریسک)',
+        'PROPOSE_NEW_PHONE' => 'شماره جدید در مقصد ایجاد می‌شود؛ مالکیت شماره موجودی منتقل نمی‌شود',
+    ];
     const ACTIONS = ['TRANSFER' => 'انتقال', 'REVIEW_ONLY' => 'فقط بررسی (بدون انتقال)'];
     const EVIDENCE = ['ownership_evidence' => 'مدرک مالکیت', 'claimant_receipt' => 'رسید پرداخت مدعی', 'consent_document' => 'رضایت‌نامه کتبی'];
     const EVIDENCE_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'audio/mpeg', 'audio/wav'];

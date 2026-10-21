@@ -118,6 +118,7 @@ class Biawin_CRM_Ownership_UI
             'listUrl' => self::url(['own_tab' => 'mine']),
             'phoneModes' => Biawin_CRM_Ownership_Presenter::PHONE_MODES,
             'phoneModeHelp' => Biawin_CRM_Ownership_Presenter::PHONE_MODE_HELP,
+            'phoneModeOwnership' => Biawin_CRM_Ownership_Presenter::PHONE_MODE_OWNERSHIP,
             'actions' => Biawin_CRM_Ownership_Presenter::ACTIONS,
             'notTransfer' => self::NOT_TRANSFER,
             'lockText' => self::LOCK_TEXT,
@@ -426,7 +427,7 @@ class Biawin_CRM_Ownership_UI
             'asset_type' => $_GET['asset_type'] ?? '', 'asset_id' => $_GET['asset_id'] ?? 0,
         ]);
         $has_prefill = $prefill['claimant'] || $prefill['source'] || $prefill['asset'] || $prefill['notices'];
-        $steps = [1 => 'پروفایل مبدأ (مالک فعلی)', 2 => 'پروفایل مقصد (مدعی)', 3 => 'انتخاب دارایی‌ها و شماره فاکتور', 4 => 'دلیل و توضیحات', 5 => 'بازبینی و ثبت'];
+        $steps = [1 => 'پروفایل مبدأ', 2 => 'پروفایل مقصد', 3 => 'انتخاب دارایی', 4 => 'روش انتقال شماره', 5 => 'دلیل و توضیحات', 6 => 'مرور نهایی'];
         $html = '<section class="bcrm-own-section bcrm-own-wizard" data-own-wizard' . ($has_prefill ? ' data-own-prefill="' . esc_attr((string)wp_json_encode($prefill)) . '"' : '') . '><div class="bcrm-own-section-head"><div><h2>درخواست تطبیق مالکیت</h2><p>ادعای مالکیت فاکتور یا شماره‌ای که در پروفایل دیگری ثبت شده است.</p></div></div>';
         $html .= self::alert('warning', '<strong>' . self::e(self::NOT_TRANSFER) . '</strong> درخواست پس از بررسی کارشناس تطبیق مالکیت و در صورت نیاز تأیید سرپرست اجرا می‌شود.');
         if ($has_prefill) {
@@ -439,22 +440,27 @@ class Biawin_CRM_Ownership_UI
         $html .= '</ol>';
         $html .= '<div class="bcrm-own-step" data-own-step="1" role="group" aria-labelledby="own-step-1"><h3 id="own-step-1">۱. پروفایل مبدأ (مالک فعلی)</h3><p class="bcrm-own-muted">کد فاکتور یا شماره موبایل مورد ادعا را جست‌وجو کنید. پروفایلی که دارایی اکنون در آن ثبت است مبدأ پرونده است.</p>'
             . '<div class="bcrm-own-searchbar"><label for="own-source-q">کد فاکتور، شماره موبایل یا نام</label><div><input id="own-source-q" type="search" data-own-lookup-q autocomplete="off"><button type="button" class="bcrm-primary-button" data-own-lookup>جست‌وجو</button></div></div>'
-            . '<div data-own-lookup-results aria-live="polite"></div><div data-own-source-card></div>'
-            . '<div class="bcrm-own-step-actions"><button type="button" class="bcrm-primary-button" data-own-next disabled>ادامه: پروفایل مقصد</button></div></div>';
+            . '<div data-own-lookup-results aria-live="polite" aria-busy="false"></div><div data-own-source-card></div>'
+            . '<span class="bcrm-own-field-error" data-own-err role="alert"></span><div class="bcrm-own-step-actions"><button type="button" class="bcrm-primary-button" data-own-next disabled>ادامه: پروفایل مقصد</button></div></div>';
         $html .= '<div class="bcrm-own-step" data-own-step="2" role="group" aria-labelledby="own-step-2" hidden><h3 id="own-step-2">۲. پروفایل مقصد (مدعی)</h3><p class="bcrm-own-muted">فقط پروفایل‌هایی که به آن‌ها دسترسی دارید قابل انتخاب‌اند. مبدأ و مقصد باید متفاوت باشند.</p>'
             . '<div class="bcrm-own-searchbar"><label for="own-claimant-q">نام، کد مشتری یا شماره موبایل مدعی</label><div><input id="own-claimant-q" type="search" data-own-claimant-q autocomplete="off"><button type="button" class="bcrm-primary-button" data-own-claimant-search>جست‌وجو</button></div></div>'
             . '<div data-own-claimant-results aria-live="polite"></div><div data-own-claimant-card></div>'
-            . '<div class="bcrm-own-step-actions"><button type="button" class="bcrm-secondary-button" data-own-prev>بازگشت</button><button type="button" class="bcrm-primary-button" data-own-next disabled>ادامه: انتخاب دارایی‌ها</button></div></div>';
+            . '<span class="bcrm-own-field-error" data-own-err role="alert"></span><div class="bcrm-own-step-actions"><button type="button" class="bcrm-secondary-button" data-own-prev>بازگشت</button><button type="button" class="bcrm-primary-button" data-own-next disabled>ادامه: انتخاب دارایی‌ها</button></div></div>';
         $html .= '<div class="bcrm-own-step" data-own-step="3" role="group" aria-labelledby="own-step-3" hidden><h3 id="own-step-3">۳. انتخاب دارایی‌ها</h3>'
             . self::alert('info', 'هر فاکتور باید جداگانه و صریح انتخاب شود. مشترک بودن شماره به معنی انتقال فاکتورهای دیگر نیست و هیچ فاکتوری خودکار انتخاب نمی‌شود.')
+            . '<p class="bcrm-own-muted">🔒 «قفل مالکیت» مانع ثبت درخواست نیست؛ این مسیر رسمی برای همین دارایی‌هاست. فقط دارایی‌ای که در پرونده فعال دیگری است قابل انتخاب نیست.</p>'
             . '<div data-own-picker></div>'
-            . '<div class="bcrm-own-step-actions"><button type="button" class="bcrm-secondary-button" data-own-prev>بازگشت</button><button type="button" class="bcrm-primary-button" data-own-next>ادامه: دلیل و توضیحات</button></div></div>';
-        $html .= '<div class="bcrm-own-step" data-own-step="4" role="group" aria-labelledby="own-step-4" hidden><h3 id="own-step-4">۴. دلیل و توضیحات</h3><div class="bcrm-own-form-grid">'
+            . '<span class="bcrm-own-field-error" data-own-err role="alert"></span><div class="bcrm-own-step-actions"><button type="button" class="bcrm-secondary-button" data-own-prev>بازگشت</button><button type="button" class="bcrm-primary-button" data-own-next>ادامه: روش انتقال شماره</button></div></div>';
+        $html .= '<div class="bcrm-own-step" data-own-step="4" role="group" aria-labelledby="own-step-4" hidden><h3 id="own-step-4">۴. روش انتقال شماره</h3>'
+            . self::alert('info', 'برای هر فاکتور یکی از چهار روش را صریحاً انتخاب کنید. هیچ روشی پیش‌فرض انتخاب نمی‌شود. انتقال فاکتور به معنی انتقال مالکیت شماره نیست؛ مالکیت شماره فقط با «انتقال مالکیت شماره فعلی» و انتخاب جداگانه خود شماره منتقل می‌شود.')
+            . '<div data-own-modes></div>'
+            . '<span class="bcrm-own-field-error" data-own-err role="alert"></span><div class="bcrm-own-step-actions"><button type="button" class="bcrm-secondary-button" data-own-prev>بازگشت</button><button type="button" class="bcrm-primary-button" data-own-next>ادامه: دلیل و توضیحات</button></div></div>';
+        $html .= '<div class="bcrm-own-step" data-own-step="5" role="group" aria-labelledby="own-step-5" hidden><h3 id="own-step-5">۵. دلیل و توضیحات</h3><div class="bcrm-own-form-grid">'
             . '<label for="own-reason">دلیل درخواست <small>(حداکثر ۱۲۰ نویسه)</small></label><input id="own-reason" maxlength="120" list="own-reason-list" data-own-reason required aria-describedby="own-reason-err"><datalist id="own-reason-list"><option value="پرداخت توسط مدعی انجام شده است"><option value="ثبت اشتباه شماره هنگام فروش"><option value="خرید برای شخص دیگر"><option value="ادغام نادرست پروفایل"></datalist><span class="bcrm-own-field-error" id="own-reason-err" data-own-err></span>'
             . '<label for="own-note">توضیحات تکمیلی</label><textarea id="own-note" rows="4" data-own-note></textarea></div>'
             . '<p class="bcrm-own-muted">مدارک (رسید پرداخت، رضایت‌نامه، مدرک مالکیت) پس از ذخیره پیش‌نویس در صفحه پرونده بارگذاری می‌شوند.</p>'
-            . '<div class="bcrm-own-step-actions"><button type="button" class="bcrm-secondary-button" data-own-prev>بازگشت</button><button type="button" class="bcrm-primary-button" data-own-next>ادامه: بازبینی</button></div></div>';
-        $html .= '<div class="bcrm-own-step" data-own-step="5" role="group" aria-labelledby="own-step-5" hidden><h3 id="own-step-5">۵. بازبینی و ثبت</h3>'
+            . '<div class="bcrm-own-step-actions"><button type="button" class="bcrm-secondary-button" data-own-prev>بازگشت</button><button type="button" class="bcrm-primary-button" data-own-next>ادامه: مرور نهایی</button></div></div>';
+        $html .= '<div class="bcrm-own-step" data-own-step="6" role="group" aria-labelledby="own-step-6" hidden><h3 id="own-step-6">۶. مرور نهایی</h3>'
             . self::alert('warning', '<strong>' . self::e(self::NOT_TRANSFER) . '</strong> با ارسال برای بررسی، هر دو پروفایل تا تعیین تکلیف پرونده فقط خواندنی می‌شوند.')
             . '<div data-own-review></div><div class="bcrm-own-form-error" data-own-wizard-error role="alert"></div>'
             . '<div class="bcrm-own-step-actions"><button type="button" class="bcrm-secondary-button" data-own-prev>بازگشت</button><button type="button" class="bcrm-secondary-button" data-own-save-draft>ذخیره پیش‌نویس</button><button type="button" class="bcrm-primary-button" data-own-save-submit>ثبت درخواست تطبیق و ارسال برای بررسی</button></div></div>';
@@ -479,9 +485,9 @@ class Biawin_CRM_Ownership_UI
         $html .= '<div class="bcrm-own-stale" data-own-stale hidden role="alert"><strong>این پرونده تغییر کرده است.</strong> اطلاعات نمایش‌داده‌شده قدیمی است؛ پیش از هر اقدام صفحه را تازه‌سازی کنید. <button type="button" class="bcrm-secondary-button" data-own-reload>تازه‌سازی پرونده</button></div>';
         $html .= self::case_banners($view, $actions);
         $html .= '<div class="bcrm-own-case-layout"><div class="bcrm-own-case-main">';
-        $html .= '<nav class="bcrm-own-anchors" aria-label="بخش‌های پرونده"><a href="#own-profiles">پروفایل‌ها</a><a href="#own-assets">دارایی‌ها</a><a href="#own-risk">ریسک</a><a href="#own-holds">توقف و قفل</a><a href="#own-evidence">مدارک</a>' . ($view['reviewer'] && self::has_phone_asset($view) ? '<a href="#own-otp">OTP</a>' : '') . '<a href="#own-decision">تصمیم و اجرا</a><a href="#own-timeline">تاریخچه</a></nav>';
+        $html .= '<nav class="bcrm-own-anchors" aria-label="بخش‌های پرونده"><a href="#own-profiles">پروفایل‌ها</a><a href="#own-assets">دارایی‌ها</a><a href="#own-risk">ریسک</a><a href="#own-holds">توقف و قفل</a><a href="#own-evidence">مدارک</a>' . ($view['reviewer'] && self::has_phone_asset($view) ? '<a href="#own-otp">OTP</a>' : '') . '<a href="#own-decision">تصمیم</a><a href="#own-timeline">تاریخچه</a><a href="#own-execution">اجرا و بازیابی</a></nav>';
         $html .= self::section_profiles($view) . self::section_assets($view, $actions) . self::section_risk($view) . self::section_holds($view)
-            . self::section_evidence($view, $actions) . self::section_otp($view, $actions) . self::section_decision($view) . self::section_timeline($view);
+            . self::section_evidence($view, $actions) . self::section_otp($view, $actions) . self::section_decision($view) . self::section_timeline($view) . self::section_execution($view);
         $html .= '</div><aside class="bcrm-own-case-actions" aria-label="اقدامات پرونده">' . ($readonly ? self::readonly_panel($case) : self::action_panel($view, $actions)) . '</aside></div></article>';
         return $html;
     }
@@ -502,6 +508,7 @@ class Biawin_CRM_Ownership_UI
         ];
         $html = '<header class="bcrm-own-case-head"><div class="bcrm-own-case-title"><span class="bcrm-own-kicker">پرونده تطبیق مالکیت</span><h2><bdi>' . self::e($case->case_code) . '</bdi></h2><div class="bcrm-own-badges">'
             . self::status_badge((string)$case->status) . self::risk_badge((string)$case->risk_level) . self::execution_badge((string)$case->execution_state) . '</div></div>';
+        $html .= self::stepper($case);
         $html .= '<dl class="bcrm-own-facts"><div><dt>مبدأ (مالک فعلی)</dt><dd>' . self::profile_label($view['source']) . '</dd></div><div><dt>مقصد (مدعی)</dt><dd>' . self::profile_label($view['claimant']) . '</dd></div>'
             . '<div><dt>درخواست‌دهنده</dt><dd>' . self::e(Biawin_CRM_Ownership_Presenter::user_name($case->requested_by_user_id)) . '</dd></div>'
             . '<div><dt>کارشناس تطبیق مالکیت</dt><dd>' . self::e($case->assigned_to_user_id ? Biawin_CRM_Ownership_Presenter::user_name($case->assigned_to_user_id) : 'تخصیص نیافته') . '</dd></div>'
@@ -512,6 +519,29 @@ class Biawin_CRM_Ownership_UI
         $html .= '</dl></details>';
         if (!empty($case->request_note)) $html .= '<div class="bcrm-own-note"><strong>توضیحات درخواست:</strong><p>' . nl2br(self::e($case->request_note)) . '</p></div>';
         return $html . '</header>';
+    }
+
+    /** Workflow position (presentation of the backend status; no frontend-only state). */
+    private static function stepper(object $case): string
+    {
+        $status = (string)$case->status;
+        if ($status === 'CANCELLED') return '<p class="bcrm-own-stepper-cancelled">' . self::badge('لغوشده — پرونده بدون انتقال مالکیت متوقف شد', 'neutral') . '</p>';
+        $high = $case->risk_level === 'HIGH_RISK' || $case->supervisor_approval_status !== 'NOT_REQUIRED';
+        $steps = ['DRAFT' => 'پیش‌نویس', 'SUBMITTED' => 'ارسال', 'ASSIGNED' => 'تخصیص', 'UNDER_REVIEW' => 'بررسی کارشناس'];
+        if ($high) $steps['AWAITING_SUPERVISOR_APPROVAL'] = 'تأیید سرپرست';
+        $steps['DECIDED'] = 'تصمیم / اجرا';
+        $steps['CLOSED'] = 'بسته';
+        $map = ['AWAITING_EVIDENCE' => 'UNDER_REVIEW', 'AWAITING_CUSTOMER_CONFIRMATION' => 'UNDER_REVIEW'];
+        $current = $map[$status] ?? $status;
+        $keys = array_keys($steps);
+        $pos = array_search($current, $keys, true);
+        $html = '<ol class="bcrm-own-stepper" aria-label="مسیر پرونده">';
+        foreach ($keys as $i => $key) {
+            $cls = $pos === false ? '' : ($i < $pos || ($key === 'CLOSED' && $status === 'CLOSED') ? 'is-done' : ($i === $pos ? 'is-current' : ''));
+            $sub = $i === $pos && isset($map[$status]) ? '<small>' . self::e(Biawin_CRM_Ownership_Presenter::STATUSES[$status]) . '</small>' : '';
+            $html .= '<li class="' . $cls . '"' . ($cls === 'is-current' ? ' aria-current="step"' : '') . '><span>' . self::e($steps[$key]) . '</span>' . $sub . '</li>';
+        }
+        return $html . '</ol>';
     }
 
     private static function case_banners(array $view, array $actions): string
@@ -743,7 +773,11 @@ class Biawin_CRM_Ownership_UI
 
     private static function section_holds(array $view): string
     {
-        $body = '<p class="bcrm-own-muted"><strong>توقف موقت پروفایل (Customer Hold)</strong> با ارسال پرونده روی هر دو پروفایل اعمال و با پایان پرونده آزاد می‌شود. <strong>قفل مالکیت دائمی (Ownership Lock)</strong> روی فاکتورهای پروفایل‌های تکمیل‌شده است و مستقل از این پرونده باقی می‌ماند (در کارت هر دارایی نمایش داده شده است).</p>';
+        $body = '<div class="bcrm-own-legend">'
+            . '<div class="is-hold"><strong>⏸ توقف موقت پروفایل (Customer Hold)</strong><p>با ارسال پرونده روی هر دو پروفایل اعمال می‌شود و پروفایل را تا پایان همین پرونده فقط‌خواندنی می‌کند. با بستن یا لغو پرونده آزاد می‌شود.</p></div>'
+            . '<div class="is-lock"><strong>🔒 قفل مالکیت دائمی (Ownership Lock)</strong><p>روی دارایی پروفایل‌های تکمیل‌شده است و مستقل از پرونده باقی می‌ماند. مانع ثبت درخواست تطبیق نیست؛ فقط تغییر عادی مالکیت را مسدود می‌کند.</p></div>'
+            . '<div class="is-case"><strong>⚑ پرونده فعال (Active Ownership Case)</strong><p>دارایی‌ای که در پرونده ارسال‌شده و باز دیگری است، در پرونده دوم قابل ثبت نیست.</p></div>'
+            . '</div>';
         if (!$view['holds']) {
             $body .= '<p>هنوز توقفی برای این پرونده ثبت نشده است' . ($view['case']->status === 'DRAFT' ? ' (پیش‌نویس روی پروفایل‌ها اثری ندارد).' : '.') . '</p>';
         } else {
@@ -865,12 +899,40 @@ class Biawin_CRM_Ownership_UI
         $body = self::decision_summary($view);
         if (!empty($case->decision_note)) $body .= '<div class="bcrm-own-note"><strong>یادداشت تصمیم کارشناس:</strong><p>' . nl2br(self::e($case->decision_note)) . '</p></div>';
         if ($view['reviewer'] && !empty($case->supervisor_note)) $body .= '<div class="bcrm-own-note"><strong>یادداشت سرپرست:</strong><p>' . nl2br(self::e($case->supervisor_note)) . '</p></div>';
-        $body .= '<h4>وضعیت اجرا</h4><p>' . self::execution_badge((string)$case->execution_state) . ($case->executed_at ? ' — ثبت انتقال: ' . self::e(self::date($case->executed_at)) : '') . '</p>';
-        if ($view['reviewer'] && !empty($case->finalization_json)) {
-            $progress = Biawin_CRM_Ownership_Repository::decode($case->finalization_json);
-            $body .= '<ul class="bcrm-own-checklist"><li>' . (!empty($progress['source']) ? '✓ بازمحاسبه پروفایل مبدأ انجام شد' : '○ بازمحاسبه پروفایل مبدأ انجام نشده') . '</li><li>' . (!empty($progress['target']) ? '✓ بازمحاسبه پروفایل مقصد انجام شد' : '○ بازمحاسبه پروفایل مقصد انجام نشده') . '</li></ul>';
+        return self::section('own-decision', 'تصمیم', $body);
+    }
+
+    /** J. Execution / recovery: the four backend execution states as a progress track. */
+    private static function section_execution(array $view): string
+    {
+        $case = $view['case'];
+        $state = (string)$case->execution_state;
+        $progress = $view['reviewer'] ? Biawin_CRM_Ownership_Repository::decode($case->finalization_json ?? null) : [];
+        $stages = [
+            ['NOT_STARTED', 'اجرا نشده', 'هنوز هیچ مالکیتی منتقل نشده است.'],
+            ['COMMITTED', 'ثبت قطعی انتقال', 'مالکیت دارایی‌ها در یک تراکنش منتقل شد.'],
+            ['FINALIZED', 'نهایی‌سازی', 'بازمحاسبه پروفایل‌ها، آزادسازی توقف و بستن پرونده.'],
+        ];
+        $classes = [
+            'NOT_STARTED' => ['is-current', '', ''],
+            'COMMITTED' => ['is-done', 'is-done', 'is-current'],
+            'FINALIZATION_FAILED' => ['is-done', 'is-done', 'is-failed'],
+            'FINALIZED' => ['is-done', 'is-done', 'is-done'],
+        ][$state] ?? ['', '', ''];
+        $sr = ['is-done' => '(انجام شده)', 'is-current' => '(مرحله فعلی)', 'is-failed' => '(ناتمام)', '' => ''];
+        $body = '<p>' . self::execution_badge($state) . ($case->executed_at ? ' — ثبت انتقال: ' . self::e(self::date($case->executed_at)) : '') . '</p><ol class="bcrm-own-track" aria-label="مراحل اجرا">';
+        foreach ($stages as $i => [$key, $label, $help]) {
+            $cls = $classes[$i];
+            $body .= '<li class="' . $cls . '"' . ($cls === 'is-current' ? ' aria-current="step"' : '') . '><strong>' . self::e($label) . '</strong><span>' . self::e($help) . '</span>' . ($sr[$cls] !== '' ? '<span class="bcrm-own-sr">' . $sr[$cls] . '</span>' : '') . '</li>';
         }
-        return self::section('own-decision', 'خلاصه تصمیم و اجرا', $body);
+        $body .= '</ol>';
+        if ($state === 'FINALIZATION_FAILED') {
+            $body .= self::alert('danger', '<strong>انتقال مالکیت قبلاً به‌صورت قطعی ثبت شده است؛ نهایی‌سازی ناتمام مانده است.</strong> اجرای دوباره انتقال مجاز نیست و انجام نمی‌شود. تنها اقدام مجاز «ادامه نهایی‌سازی» است که بازمحاسبه پروفایل‌ها و بستن پرونده را کامل می‌کند.', 'alert');
+        }
+        if ($view['reviewer'] && $state !== 'NOT_STARTED') {
+            $body .= '<ul class="bcrm-own-checklist"><li class="' . (!empty($progress['source']) ? 'is-done' : 'is-todo') . '">' . (!empty($progress['source']) ? '✓ بازمحاسبه پروفایل مبدأ انجام شد' : '○ بازمحاسبه پروفایل مبدأ انجام نشده') . '</li><li class="' . (!empty($progress['target']) ? 'is-done' : 'is-todo') . '">' . (!empty($progress['target']) ? '✓ بازمحاسبه پروفایل مقصد انجام شد' : '○ بازمحاسبه پروفایل مقصد انجام نشده') . '</li></ul>';
+        }
+        return self::section('own-execution', 'اجرا و بازیابی', $body);
     }
 
     private static function event_summary(object $event, array $view): string
@@ -903,7 +965,9 @@ class Biawin_CRM_Ownership_UI
             foreach ($view['data']['events'] as $event) {
                 $summary = self::event_summary($event, $view);
                 $critical = in_array($event->event_type, ['CASE_EXECUTION_FAILED', 'RISK_ESCALATED', 'MANUAL_RISK_ESCALATION', 'SUPERVISOR_REJECTED', 'OTP_FAILED', 'OTP_EXPIRED', 'OTP_DELIVERY_FAILED', 'OTP_REUSE_REJECTED'], true);
-                $body .= '<li class="' . ($critical ? 'is-critical' : '') . '"><time>' . self::e(self::date($event->created_at)) . '</time><div><strong>' . self::e(Biawin_CRM_Ownership_Presenter::label(Biawin_CRM_Ownership_Presenter::EVENTS, $event->event_type)) . '</strong> <small class="bcrm-own-code">' . self::e($event->event_type) . '</small><p class="bcrm-own-muted">' . self::e(Biawin_CRM_Ownership_Presenter::user_name($event->actor_user_id)) . '</p>' . ($summary !== '' ? '<p>' . self::e($summary) . '</p>' : '') . '</div></li>';
+                $body .= '<li class="' . ($critical ? 'is-critical' : '') . '"><time>' . self::e(self::date($event->created_at)) . '</time><div><strong>' . self::e(Biawin_CRM_Ownership_Presenter::label(Biawin_CRM_Ownership_Presenter::EVENTS, $event->event_type)) . '</strong> <small class="bcrm-own-code">' . self::e($event->event_type) . '</small><p class="bcrm-own-muted">' . self::e(Biawin_CRM_Ownership_Presenter::user_name($event->actor_user_id)) . '</p>' . ($summary !== '' ? '<p>' . self::e($summary) . '</p>' : '')
+                    . (($event->meta_json ?? '') !== '' && $event->meta_json !== '[]' && $event->meta_json !== '{}' ? '<details class="bcrm-own-tech"><summary>جزئیات فنی</summary><pre dir="ltr">' . self::e((string)wp_json_encode(Biawin_CRM_Ownership_Repository::decode($event->meta_json), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) . '</pre></details>' : '')
+                    . '</div></li>';
             }
             if (!$view['data']['events']) $body .= '<li>رویدادی ثبت نشده است.</li>';
             $body .= '</ol>';
@@ -925,7 +989,7 @@ class Biawin_CRM_Ownership_UI
 
     private static function form(string $op, string $title, string $fields, string $button, string $confirm = '', string $tone = 'primary', string $intro = ''): string
     {
-        return '<form class="bcrm-own-action" data-own-op="' . esc_attr($op) . '"' . ($confirm !== '' ? ' data-own-confirm="' . esc_attr($confirm) . '"' : '') . '><h4>' . self::e($title) . '</h4>' . ($intro !== '' ? '<p class="bcrm-own-muted">' . $intro . '</p>' : '') . $fields
+        return '<form class="bcrm-own-action" data-own-op="' . esc_attr($op) . '"' . ($confirm !== '' ? ' data-own-confirm="' . esc_attr($confirm) . '"' : '') . '><h5>' . self::e($title) . '</h5>' . ($intro !== '' ? '<p class="bcrm-own-muted">' . $intro . '</p>' : '') . $fields
             . '<button type="submit" class="' . ($tone === 'danger' ? 'bcrm-secondary-button is-danger' : ($tone === 'secondary' ? 'bcrm-secondary-button' : 'bcrm-primary-button')) . '">' . self::e($button) . '</button><div class="bcrm-own-form-error" data-own-form-error role="alert"></div></form>';
     }
 
@@ -947,84 +1011,134 @@ class Biawin_CRM_Ownership_UI
         return '<div class="bcrm-own-actions-card"><h3>اقدامات</h3><p>' . self::e($text) . ' پرونده فقط‌خواندنی است و هیچ اقدامی روی آن مجاز نیست.</p></div>';
     }
 
+    private static function group(string $role, string $title, string $intro, array $items): string
+    {
+        $items = array_values(array_filter($items, static function ($x) { return $x !== ''; }));
+        if (!$items) return '';
+        return '<section class="bcrm-own-group is-' . esc_attr($role) . '" aria-label="' . esc_attr($title) . '"><h4 class="bcrm-own-group-title">' . self::e($title) . '</h4>' . ($intro !== '' ? '<p class="bcrm-own-muted">' . $intro . '</p>' : '') . implode('', $items) . '</section>';
+    }
+
+    /** One plain-language "what happens next" line for the current viewer. */
+    private static function next_step(array $view, array $actions): array
+    {
+        $case = $view['case'];
+        $high = $case->risk_level === 'HIGH_RISK';
+        if ($actions['submit']) return ['you', 'دارایی‌ها و مدارک را بررسی کنید و سپس «ارسال برای بررسی» را بزنید.'];
+        if ($actions['resume']) return ['you', 'انتقال قبلاً ثبت شده است؛ فقط «ادامه نهایی‌سازی» را بزنید.'];
+        if ($actions['execute']) return ['you', 'تصمیم نهایی ثبت شده است؛ خلاصه را بازبینی و «اجرای انتقال مالکیت» را بزنید.'];
+        if ($actions['supervisor']) return ['you', 'خلاصه، دلایل ریسک، مدارک و تاریخچه را بررسی کنید و «تأیید سرپرست» یا «بازگرداندن به بررسی» را انتخاب کنید.'];
+        if ($actions['assign'] && $case->status === 'SUBMITTED') return ['you', 'پرونده را به یک کارشناس تطبیق مالکیت تخصیص دهید.'];
+        if ($actions['start_review'] && $case->status === 'ASSIGNED') return ['you', '«شروع بررسی» را بزنید.'];
+        if ($actions['start_review']) return ['you', 'پس از دریافت مدرک یا تأیید مشتری، «بازگشت به بررسی» را بزنید.'];
+        if ($actions['approve']) return ['you', 'مدارک و تماس‌ها را تکمیل کنید، برنامه نهایی هر فاکتور را تأیید کنید و سپس تصمیم بگیرید.' . ($high ? ' این پرونده پرریسک است: پس از تأیید شما، تأیید مستقل سرپرست لازم است.' : '')];
+        if ($actions['add_evidence']) return ['other', 'پرونده در جریان بررسی است. اگر مدرک خواسته شده، از بخش «مدارک» بارگذاری کنید.'];
+        return ['other', self::idle_reason($view)];
+    }
+
+    /** Read-only review checklist from case data; it guides, it does not gate (the backend gates). */
+    private static function review_checklist(array $view): string
+    {
+        $case = $view['case'];
+        $events = $view['data']['events'] ?? [];
+        $has = static function (string $type) use ($events) { foreach ($events as $e) if ($e->event_type === $type) return true; return false; };
+        $invoices = array_filter($view['assets'], static function ($a) { return $a['row']->asset_type === 'INVOICE'; });
+        $planned = array_filter($invoices, static function ($a) { return (string)$a['row']->final_phone_resolution !== ''; });
+        $items = [
+            [count($view['evidence']) > 0, 'مدرک پشتیبان ثبت شده است'],
+            [$has('CONTACT_RECORDED'), 'تماس با طرفین ثبت شده است'],
+            [count($invoices) === 0 || count($planned) === count($invoices), 'برنامه نهایی همه فاکتورها تأیید شده است (' . number_format_i18n(count($planned)) . ' از ' . number_format_i18n(count($invoices)) . ')'],
+            [!empty($case->risk_evaluated_at), 'ریسک توسط سیستم ارزیابی شده است'],
+        ];
+        $html = '<div class="bcrm-own-checklist-card"><h4>چک‌لیست بررسی</h4><ul class="bcrm-own-checklist">';
+        foreach ($items as [$done, $label]) $html .= '<li class="' . ($done ? 'is-done' : 'is-todo') . '"><span aria-hidden="true">' . ($done ? '✓' : '○') . '</span> ' . self::e($label) . ' <span class="bcrm-own-sr">' . ($done ? '(انجام شده)' : '(انجام نشده)') . '</span></li>';
+        return $html . '</ul><p class="bcrm-own-muted">این فهرست راهنماست؛ شرایط تأیید را سیستم هنگام ثبت تصمیم بررسی می‌کند.</p></div>';
+    }
+
     private static function action_panel(array $view, array $actions): string
     {
         $case = $view['case'];
         $status = (string)$case->status;
-        $html = '<div class="bcrm-own-actions-card"><h3>اقدامات مجاز</h3><p class="bcrm-own-muted">نمایش اقدام به معنی مجاز بودن قطعی نیست؛ سیستم هنگام اجرا دسترسی، وضعیت و نسخه پرونده را دوباره بررسی می‌کند.</p>';
-        $any = false;
+        $high = $case->risk_level === 'HIGH_RISK';
+        [$who, $next] = self::next_step($view, $actions);
+        $html = '<div class="bcrm-own-actions-card"><div class="bcrm-own-next is-' . $who . '" role="status"><span class="bcrm-own-kicker">گام بعدی</span><strong>' . self::e($next) . '</strong></div>';
+        if ($view['reviewer'] && in_array($status, Biawin_CRM_Ownership_Workflow::REVIEW_STATES, true)) $html .= self::review_checklist($view);
+        if ($high && !in_array($status, ['CLOSED', 'CANCELLED'], true) && $view['reviewer']) {
+            $html .= self::alert('danger', '<strong>⚠ پرونده پرریسک:</strong> تأیید کارشناس به‌تنهایی کافی نیست؛ پس از تأیید کارشناس، تأیید مستقل سرپرستی غیر از تصمیم‌گیرنده لازم است.');
+        }
+
+        $requester = [];
         if ($actions['update_draft']) {
-            $any = true;
-            $html .= self::form('update_draft', 'ویرایش پیش‌نویس', '<label for="own-d-reason">دلیل درخواست</label><input id="own-d-reason" name="reason" maxlength="120" value="' . esc_attr((string)$case->claim_reason) . '"><label for="own-d-note">توضیحات</label><textarea id="own-d-note" name="note" rows="3">' . esc_textarea((string)$case->request_note) . '</textarea>', 'ذخیره تغییرات پیش‌نویس', '', 'secondary');
-            $html .= self::form('submit', 'ارسال برای بررسی', '', 'ارسال برای بررسی', self::NOT_TRANSFER . ' با ارسال، هر دو پروفایل تا تعیین تکلیف پرونده فقط خواندنی می‌شوند و پیش‌نویس دیگر قابل ویرایش نیست. ادامه می‌دهید؟', 'primary', self::e(self::NOT_TRANSFER));
-            $html .= self::form('cancel', 'لغو پیش‌نویس', self::textarea('own-cd-reason', 'دلیل لغو', true, 'reason'), 'لغو پیش‌نویس', 'پیش‌نویس لغو شود؟ این اقدام برگشت‌پذیر نیست.', 'danger');
+            $requester[] = self::form('update_draft', 'ویرایش پیش‌نویس', '<label for="own-d-reason">دلیل درخواست</label><input id="own-d-reason" name="reason" maxlength="120" value="' . esc_attr((string)$case->claim_reason) . '"><label for="own-d-note">توضیحات</label><textarea id="own-d-note" name="note" rows="3">' . esc_textarea((string)$case->request_note) . '</textarea>', 'ذخیره تغییرات پیش‌نویس', '', 'secondary');
+            $requester[] = self::form('submit', 'ارسال برای بررسی', '', 'ارسال برای بررسی', self::NOT_TRANSFER . ' با ارسال، هر دو پروفایل تا تعیین تکلیف پرونده فقط خواندنی می‌شوند و پیش‌نویس دیگر قابل ویرایش نیست. ادامه می‌دهید؟', 'primary', self::e(self::NOT_TRANSFER));
+            $requester[] = self::form('cancel', 'لغو پیش‌نویس', self::textarea('own-cd-reason', 'دلیل لغو', true, 'reason'), 'لغو پیش‌نویس', 'پیش‌نویس لغو شود؟ این اقدام برگشت‌پذیر نیست.', 'danger');
         }
-        if ($actions['assign']) {
-            $any = true;
-            $options = '<option value="">— انتخاب کارشناس —</option>';
-            foreach ($view['specialists'] as $uid => $name) $options .= '<option value="' . (int)$uid . '"' . selected((int)$case->assigned_to_user_id, (int)$uid, false) . '>' . self::e($name) . '</option>';
-            $html .= self::form('assign', $case->assigned_to_user_id ? 'تغییر کارشناس' : 'تخصیص به کارشناس', '<label for="own-as">کارشناس تطبیق مالکیت</label><select id="own-as" name="specialist" required>' . $options . '</select>', $case->assigned_to_user_id ? 'ثبت تغییر کارشناس' : 'تخصیص پرونده');
-        }
+
+        $specialist = [];
         if ($actions['start_review']) {
-            $any = true;
-            $html .= self::form('start_review', $status === 'ASSIGNED' ? 'شروع بررسی' : 'ادامه بررسی', '', $status === 'ASSIGNED' ? 'شروع بررسی' : 'بازگشت به بررسی', '', 'primary', $status === 'ASSIGNED' ? '' : 'پس از دریافت مدرک یا تأیید مشتری، پرونده را به وضعیت «در حال بررسی» برگردانید.');
+            $specialist[] = self::form('start_review', $status === 'ASSIGNED' ? 'شروع بررسی' : 'ادامه بررسی', '', $status === 'ASSIGNED' ? 'شروع بررسی' : 'بازگشت به بررسی', '', 'primary', $status === 'ASSIGNED' ? '' : 'پس از دریافت مدرک یا تأیید مشتری، پرونده را به وضعیت «در حال بررسی» برگردانید.');
         }
         if ($actions['request_evidence']) {
-            $any = true;
-            $html .= self::form('request_evidence', 'درخواست مدرک / تأیید مشتری', '<fieldset class="bcrm-own-radios"><legend>نوع درخواست</legend><label><input type="radio" name="customer_confirmation" value="0" checked> درخواست مدرک</label><label><input type="radio" name="customer_confirmation" value="1"> درخواست تأیید مشتری</label></fieldset>' . self::textarea('own-re-note', 'شرح درخواست'), 'ثبت درخواست مدرک');
+            $specialist[] = self::form('request_evidence', 'درخواست مدرک / تأیید مشتری', '<fieldset class="bcrm-own-radios"><legend>نوع درخواست</legend><label><input type="radio" name="customer_confirmation" value="0" checked> درخواست مدرک</label><label><input type="radio" name="customer_confirmation" value="1"> درخواست تأیید مشتری</label></fieldset>' . self::textarea('own-re-note', 'شرح درخواست'), 'ثبت درخواست مدرک', '', 'secondary');
         }
         if ($actions['record_contact']) {
-            $any = true;
             $opts = '';
             foreach (Biawin_CRM_Ownership_Presenter::CONTACT_RESULTS as $key => $label) $opts .= '<option value="' . esc_attr($key) . '">' . self::e($label) . '</option>';
-            $html .= self::form('record_contact', 'ثبت تماس', '<label for="own-ct-r">نتیجه تماس</label><select id="own-ct-r" name="result" required>' . $opts . '</select>' . self::textarea('own-ct-note', 'شرح تماس'), 'ثبت تماس', '', 'secondary', 'برای روش «رضایت مالک فعلی»، تماس با نتیجه «رضایت مالک فعلی» لازم است.');
+            $specialist[] = self::form('record_contact', 'ثبت تماس', '<label for="own-ct-r">نتیجه تماس</label><select id="own-ct-r" name="result" required>' . $opts . '</select>' . self::textarea('own-ct-note', 'شرح تماس'), 'ثبت تماس', '', 'secondary', 'برای روش «رضایت مالک فعلی»، تماس با نتیجه «رضایت مالک فعلی» لازم است.');
         }
         if ($actions['escalate']) {
-            $any = true;
-            $html .= self::form('evaluate_risk', 'ارزیابی / ارجاع ریسک', self::textarea('own-esc', 'دلیل ارجاع دستی به پرریسک (برای فقط بازارزیابی خالی بگذارید)', false, 'escalation_reason'), 'ثبت ارزیابی ریسک', 'ارزیابی ریسک ثبت شود؟ در صورت درج دلیل، پرونده پرریسک می‌شود و این سطح قابل کاهش نیست.', 'secondary');
+            $specialist[] = self::form('evaluate_risk', 'ارزیابی / ارجاع ریسک', self::textarea('own-esc', 'دلیل ارجاع دستی به پرریسک (برای فقط بازارزیابی خالی بگذارید)', false, 'escalation_reason'), 'ثبت ارزیابی ریسک', 'ارزیابی ریسک ثبت شود؟ در صورت درج دلیل، پرونده پرریسک می‌شود و این سطح قابل کاهش نیست.', 'secondary');
         }
         if ($actions['approve'] || $actions['reject'] || $actions['withdraw']) {
-            $any = true;
-            $html .= '<div class="bcrm-own-decision-box"><h4>تصمیم کارشناس</h4>' . self::decision_summary($view) . '</div>';
+            $specialist[] = '<div class="bcrm-own-decision-box"><h5>خلاصه پیش از تصمیم کارشناس</h5>' . self::decision_summary($view) . '</div>';
             if ($actions['approve']) {
-                $high = $case->risk_level === 'HIGH_RISK';
-                $html .= self::form('decide', 'تأیید انتقال', '<input type="hidden" name="decision" value="TRANSFER_APPROVED">' . self::method_select('own-ap-m') . self::textarea('own-ap-note', 'یادداشت تصمیم'), 'تأیید انتقال',
+                $specialist[] = self::form('decide', 'تأیید انتقال', '<input type="hidden" name="decision" value="TRANSFER_APPROVED">' . self::method_select('own-ap-m') . self::textarea('own-ap-note', 'یادداشت تصمیم'), $high ? 'تأیید انتقال و ارسال برای تأیید سرپرست' : 'تأیید انتقال',
                     $high ? 'پرونده پرریسک است: تأیید شما برای تأیید مستقل به صف سرپرست می‌رود و هنوز مالکیتی منتقل نمی‌شود. ادامه می‌دهید؟' : 'تأیید انتقال ثبت شود؟ پس از تأیید، اجرای انتقال به‌صورت جداگانه انجام می‌شود.',
                     'primary', $high ? 'این پرونده پرریسک است و پس از تأیید شما به تأیید مستقل سرپرست نیاز دارد.' : 'تأیید فقط با مدرک پشتیبان ثبت‌شده ممکن است.');
             }
-            if ($actions['reject']) $html .= self::form('decide', 'رد درخواست', '<input type="hidden" name="decision" value="CLAIM_REJECTED">' . self::method_select('own-rj-m') . self::textarea('own-rj-note', 'دلیل رد'), 'رد درخواست', 'درخواست رد و پرونده بسته شود؟ توقف هر دو پروفایل آزاد می‌شود و این اقدام برگشت‌پذیر نیست.', 'danger');
-            if ($actions['withdraw']) $html .= self::form('decide', 'ثبت انصراف مدعی', '<input type="hidden" name="decision" value="CLAIM_WITHDRAWN">' . self::method_select('own-wd-m') . self::textarea('own-wd-note', 'شرح انصراف'), 'ثبت انصراف', 'انصراف ثبت و پرونده بسته شود؟ این اقدام برگشت‌پذیر نیست.', 'danger');
+            if ($actions['reject']) $specialist[] = self::form('decide', 'رد درخواست', '<input type="hidden" name="decision" value="CLAIM_REJECTED">' . self::method_select('own-rj-m') . self::textarea('own-rj-note', 'دلیل رد'), 'رد درخواست', 'درخواست رد و پرونده بسته شود؟ توقف هر دو پروفایل آزاد می‌شود و این اقدام برگشت‌پذیر نیست.', 'danger');
+            if ($actions['withdraw']) $specialist[] = self::form('decide', 'ثبت انصراف مدعی', '<input type="hidden" name="decision" value="CLAIM_WITHDRAWN">' . self::method_select('own-wd-m') . self::textarea('own-wd-note', 'شرح انصراف'), 'ثبت انصراف', 'انصراف ثبت و پرونده بسته شود؟ این اقدام برگشت‌پذیر نیست.', 'danger');
         } elseif ($view['reviewer'] && in_array($status, ['AWAITING_EVIDENCE', 'AWAITING_CUSTOMER_CONFIRMATION'], true)) {
-            $html .= '<p class="bcrm-own-explain">تصمیم (تأیید/رد/انصراف) فقط در وضعیت «در حال بررسی» ممکن است؛ ابتدا «بازگشت به بررسی» را انجام دهید.</p>';
+            $specialist[] = '<p class="bcrm-own-explain">تصمیم (تأیید/رد/انصراف) فقط در وضعیت «در حال بررسی» ممکن است؛ ابتدا «بازگشت به بررسی» را انجام دهید.</p>';
+        }
+
+        $supervisor = [];
+        if ($actions['assign']) {
+            $options = '<option value="">— انتخاب کارشناس —</option>';
+            foreach ($view['specialists'] as $uid => $name) $options .= '<option value="' . (int)$uid . '"' . selected((int)$case->assigned_to_user_id, (int)$uid, false) . '>' . self::e($name) . '</option>';
+            $supervisor[] = self::form('assign', $case->assigned_to_user_id ? 'تغییر کارشناس' : 'تخصیص به کارشناس', '<label for="own-as">کارشناس تطبیق مالکیت</label><select id="own-as" name="specialist" required>' . $options . '</select>', $case->assigned_to_user_id ? 'ثبت تغییر کارشناس' : 'تخصیص پرونده', '', $status === 'SUBMITTED' ? 'primary' : 'secondary');
         }
         if ($actions['supervisor']) {
-            $any = true;
-            $html .= '<div class="bcrm-own-decision-box is-supervisor"><h4>تصمیم سرپرست (High Risk)</h4>' . self::decision_summary($view) . '</div>';
-            $html .= self::form('supervisor_decision', 'تأیید سرپرست', '<input type="hidden" name="approve" value="1">' . self::textarea('own-sv-a', 'یادداشت تأیید'), 'تأیید سرپرست', 'تأیید مستقل سرپرست ثبت شود؟ پس از آن انتقال آماده اجراست.');
-            $html .= self::form('supervisor_decision', 'بازگرداندن به بررسی', '<input type="hidden" name="approve" value="0">' . self::textarea('own-sv-r', 'دلیل بازگرداندن'), 'بازگرداندن به بررسی', 'پرونده با این دلیل به کارشناس برگردانده شود؟', 'danger');
+            $supervisor[] = '<div class="bcrm-own-decision-box is-supervisor"><h5>خلاصه برای تصمیم سرپرست (High Risk)</h5>' . self::decision_summary($view) . '</div>';
+            $supervisor[] = self::form('supervisor_decision', 'تأیید سرپرست', '<input type="hidden" name="approve" value="1">' . self::textarea('own-sv-a', 'یادداشت تأیید'), 'تأیید سرپرست', 'تأیید مستقل سرپرست ثبت شود؟ پس از آن انتقال آماده اجراست.');
+            $supervisor[] = self::form('supervisor_decision', 'بازگرداندن به بررسی', '<input type="hidden" name="approve" value="0">' . self::textarea('own-sv-r', 'دلیل بازگرداندن'), 'بازگرداندن به بررسی', 'پرونده با این دلیل به کارشناس برگردانده شود؟', 'danger');
         } elseif ($actions['supervisor_self']) {
-            $html .= '<p class="bcrm-own-explain">تأیید سرپرست برای شما در دسترس نیست زیرا خودتان تصمیم انتقال را ثبت کرده‌اید (تفکیک وظایف).</p>';
+            $supervisor[] = '<p class="bcrm-own-explain">تأیید سرپرست برای شما در دسترس نیست زیرا خودتان تصمیم انتقال را ثبت کرده‌اید (تفکیک وظایف).</p>';
         } elseif ($status === 'AWAITING_SUPERVISOR_APPROVAL') {
-            $html .= '<p class="bcrm-own-explain">پرونده منتظر تأیید مستقل سرپرست تطبیق مالکیت است.</p>';
-        }
-        if ($actions['execute']) {
-            $any = true;
-            $html .= '<div class="bcrm-own-decision-box is-execute"><h4>اجرای انتقال تأییدشده</h4>' . self::decision_summary($view) . '</div>';
-            $html .= self::form('execute', 'اجرای انتقال مالکیت', '', 'اجرای انتقال مالکیت', 'مالکیت دارایی‌های مشخص‌شده به‌صورت قطعی به پروفایل مقصد منتقل می‌شود. این اقدام برگشت‌پذیر نیست. ادامه می‌دهید؟', 'primary', 'انتقال یک‌بار و به‌صورت تراکنشی ثبت می‌شود و سپس پروفایل‌ها بازمحاسبه می‌شوند.');
-        }
-        if ($actions['resume']) {
-            $any = true;
-            $html .= self::form('resume', 'ادامه نهایی‌سازی', '', 'ادامه نهایی‌سازی', 'نهایی‌سازی ادامه یابد؟ انتقال مالکیت تکرار نمی‌شود؛ فقط بازمحاسبه پروفایل‌ها و بستن پرونده تکمیل می‌شود.', 'primary', 'انتقال مالکیت قبلاً ثبت شده است و تکرار نمی‌شود.');
-        } elseif ($status === 'DECIDED' && in_array($case->execution_state, ['COMMITTED', 'FINALIZATION_FAILED'], true)) {
-            $html .= '<p class="bcrm-own-explain">ادامه نهایی‌سازی فقط توسط کارشناس تخصیص‌یافته یا سرپرست تطبیق مالکیت ممکن است.</p>';
-        } elseif ($status === 'DECIDED' && !$actions['execute']) {
-            $html .= '<p class="bcrm-own-explain">اجرای انتقال تأییدشده توسط کارشناس تخصیص‌یافته یا سرپرست تطبیق مالکیت انجام می‌شود.</p>';
+            $supervisor[] = '<p class="bcrm-own-explain">پرونده منتظر تأیید مستقل سرپرست تطبیق مالکیت است.</p>';
         }
         if ($actions['cancel_case']) {
-            $any = true;
-            $html .= self::form('cancel', 'لغو پرونده (سرپرست)', self::textarea('own-cc-reason', 'دلیل لغو', true, 'reason'), 'لغو پرونده', 'پرونده لغو و توقف هر دو پروفایل آزاد شود؟ این اقدام برگشت‌پذیر نیست.', 'danger');
+            $supervisor[] = self::form('cancel', 'لغو پرونده (سرپرست)', self::textarea('own-cc-reason', 'دلیل لغو', true, 'reason'), 'لغو پرونده', 'پرونده لغو و توقف هر دو پروفایل آزاد شود؟ این اقدام برگشت‌پذیر نیست.', 'danger');
         }
-        if (!$any) $html .= '<p class="bcrm-own-explain">' . self::e(self::idle_reason($view)) . '</p>';
+
+        $execution = [];
+        if ($actions['execute']) {
+            $execution[] = '<div class="bcrm-own-decision-box is-execute"><h5>آنچه با اجرا منتقل می‌شود</h5>' . self::decision_summary($view) . '</div>';
+            $execution[] = self::form('execute', 'اجرای انتقال مالکیت', '', 'اجرای انتقال مالکیت', 'مالکیت دارایی‌های مشخص‌شده به‌صورت قطعی به پروفایل مقصد منتقل می‌شود. این اقدام برگشت‌پذیر نیست. ادامه می‌دهید؟', 'primary', 'انتقال یک‌بار و به‌صورت تراکنشی ثبت می‌شود و سپس پروفایل‌ها بازمحاسبه می‌شوند.');
+        }
+        if ($actions['resume']) {
+            $execution[] = self::form('resume', 'ادامه نهایی‌سازی', '', 'ادامه نهایی‌سازی', 'نهایی‌سازی ادامه یابد؟ انتقال مالکیت تکرار نمی‌شود؛ فقط بازمحاسبه پروفایل‌ها و بستن پرونده تکمیل می‌شود.', 'primary', 'انتقال مالکیت قبلاً ثبت شده است و تکرار نمی‌شود.');
+        } elseif ($status === 'DECIDED' && in_array($case->execution_state, ['COMMITTED', 'FINALIZATION_FAILED'], true)) {
+            $execution[] = '<p class="bcrm-own-explain">ادامه نهایی‌سازی فقط توسط کارشناس تخصیص‌یافته یا سرپرست تطبیق مالکیت ممکن است.</p>';
+        } elseif ($status === 'DECIDED' && !$actions['execute']) {
+            $execution[] = '<p class="bcrm-own-explain">اجرای انتقال تأییدشده توسط کارشناس تخصیص‌یافته یا سرپرست تطبیق مالکیت انجام می‌شود.</p>';
+        }
+
+        $groups = self::group('requester', 'اقدامات درخواست‌دهنده', '', $requester)
+            . self::group('specialist', 'اقدامات کارشناس تطبیق مالکیت', '', $specialist)
+            . self::group('supervisor', 'اقدامات سرپرست تطبیق مالکیت', '', $supervisor)
+            . self::group('execution', 'اجرا و بازیابی', '', $execution);
+        $html .= $groups !== '' ? $groups : '<p class="bcrm-own-explain">' . self::e(self::idle_reason($view)) . '</p>';
+        $html .= '<p class="bcrm-own-muted bcrm-own-authority">نمایش یک اقدام به معنی مجاز بودن قطعی آن نیست؛ سیستم هنگام اجرا دسترسی، وضعیت و نسخه پرونده را دوباره بررسی می‌کند.</p>';
         return $html . '</div>';
     }
 
