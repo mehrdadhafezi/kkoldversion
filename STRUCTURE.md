@@ -147,3 +147,7 @@ Existing CRM writes delegate to `Biawin_CRM_DB::write()` for centralized hold/ow
 ## Ownership Reconciliation C3 — UI (on 0.8.65.19)
 
 The ownership UI is a presentation/transport layer: `Biawin_CRM_Ownership_Presenter` (read-only view models from `Workflow::get()/list_cases()`), `Biawin_CRM_Ownership_Ajax` (one `wp_ajax_bcrm_ownership` action whose ops each call a single approved backend command) and `Biawin_CRM_Ownership_UI` (workspaces). Assets live in `ownership-ui/` because `assets/`, the admin controller and the frontend controller are frozen by the C2 regression suite; the portal view `bcrm_view=ownership` is attached through shortcode filters and the admin page as a `biawin-crm` submenu. See `docs/OWNERSHIP-RECONCILIATION-C3-UI.md`. New ownership actions must still be added as backend commands first; the UI never mutates ownership tables.
+
+## Portal presentation layer — C3.11
+
+`Biawin_CRM_Portal_UI` only enqueues `portal-ui/portal.css` and `portal-ui/portal.js` after the frozen portal assets (priority 40, logged-in `bcrm_work_cases` users). It is progressive enhancement over the frozen shell: no server calls, no markup changes on the server, no routes or permissions. `tests/browser/portal-review.js` sweeps every portal view at six widths. See `docs/PORTAL-UI-UX-REVIEW-C3-11.md`.
