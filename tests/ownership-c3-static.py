@@ -15,7 +15,7 @@ UI_ASSETS = ["ownership-ui/ownership.js", "ownership-ui/ownership.css"]
 
 changed = subprocess.check_output(["git", "diff", "--name-only", C2, "--"], text=True).split()
 changed += subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], text=True).split()
-allowed = set(UI_PHP + UI_ASSETS + ["biawin-crm-integration.php", "CHANGELOG.md", "STRUCTURE.md", "docs/OWNERSHIP-RECONCILIATION-C3-UI.md", "tests/ownership-c3-ui.php", "tests/ownership-c3-static.py", "tests/ownership-c3-legacy-bridge.php",
+allowed = set(UI_PHP + UI_ASSETS + ["biawin-crm-integration.php", "CHANGELOG.md", "STRUCTURE.md", "docs/OWNERSHIP-RECONCILIATION-C3-UI.md", "tests/ownership-c3-ui.php", "tests/ownership-c3-static.py", "tests/ownership-c3-legacy-bridge.php", "tests/ownership-c3-final-plan.php",
     "tests/browser/bootstrap.php", "tests/browser/seed.php", "tests/browser/router.php", "tests/browser/ownership-flows.js", "tests/browser/run.sh"])
 unexpected = sorted(set(changed) - allowed)
 assert not unexpected, "C3 changed files outside the UI layer: %s" % unexpected
@@ -83,3 +83,9 @@ assert 'name="final_action"' in ui and "isset($in['final_action'])" in ajax
 result = subprocess.run(["node", "--check", "tests/browser/ownership-flows.js"], capture_output=True, text=True)
 assert result.returncode == 0, result.stderr
 print("PASS: C3.9 no form field shadows the admin-ajax 'action' key; browser suite syntax valid")
+
+# ---- C3.10: final-plan inputs are mode-gated and the payload is normalized before sending
+js = Path("ownership-ui/ownership.js").read_text(encoding="utf-8")
+assert 'data-own-mode-field="USE_TARGET_PROFILE_PHONE"' in ui and 'data-own-mode-field="PROPOSE_NEW_PHONE"' in ui
+assert "function normalizePlanPayload(" in js and 'normalizePlanPayload(form, data)' in js
+print("PASS: C3.10 final-plan fields gated by mode and payload normalized in ownership.js")

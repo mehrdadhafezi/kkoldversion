@@ -23,7 +23,8 @@ async function open(uid, viewport = {width: 1366, height: 900}) {
     await context.addCookies([{name: "bcrm_uid", value: String(uid), url: BASE}]);
     const page = await context.newPage();
     page.on("pageerror", (e) => pageErrors.push(uid + ": " + e.message));
-    page.ajax = [];
+    page.ajax = []; page.raw = [];
+    page.on("request", (r) => { if (r.url().endsWith("/ajax") && r.method() === "POST") page.raw.push(r.postData() || ""); });
     page.on("request", (r) => { if (r.url().endsWith("/ajax") && r.method() === "POST") { const d = r.postData() || ""; const m = /name="op"\r\n\r\n([^\r]+)/.exec(d) || /(?:^|&)op=([^&]+)/.exec(d); const v = /name="version"\r\n\r\n([^\r]+)/.exec(d) || /(?:^|&)version=([^&]+)/.exec(d); page.ajax.push({op: m ? decodeURIComponent(m[1]) : (/(?:^|&)action=([^&]+)/.exec(d) || [])[1], version: v ? v[1] : null}); } });
     return page;
 }
@@ -73,10 +74,11 @@ async function visual(page, name, url) {
         ok(over <= 1, `${name} ${tag}: no horizontal overflow (${over}px)`);
         await page.screenshot({path: path.join(SHOTS, `${name}-${tag}.png`), fullPage: true});
         const overlaps = await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll(".bcrm-own button, .bcrm-own a.bcrm-primary-button, .bcrm-own a.bcrm-secondary-button")).filter((b) => b.offsetParent !== null).map((b) => b.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
-            let n = 0;
-            for (let i = 0; i < btns.length; i++) for (let j = i + 1; j < btns.length; j++) { const a = btns[i], b = btns[j]; const x = Math.min(a.right, b.right) - Math.max(a.left, b.left), y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top); if (x > 2 && y > 2) n++; }
-            return n;
+            const els = Array.from(document.querySelectorAll(".bcrm-own button, .bcrm-own a.bcrm-primary-button, .bcrm-own a.bcrm-secondary-button")).filter((b) => (b.checkVisibility ? b.checkVisibility({checkVisibilityCSS: true, contentVisibilityAuto: true}) : b.offsetParent !== null) && b.getClientRects().length);
+            const btns = els.map((b) => [b, b.getBoundingClientRect()]).filter(([, r]) => r.width > 0 && r.height > 0);
+            const hits = [];
+            for (let i = 0; i < btns.length; i++) for (let j = i + 1; j < btns.length; j++) { const a = btns[i][1], b = btns[j][1]; const x = Math.min(a.right, b.right) - Math.max(a.left, b.left), y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top); if (x > 2 && y > 2) hits.push(btns[i][0].textContent.trim() + " × " + btns[j][0].textContent.trim()); }
+            return hits.length ? hits.length + ": " + hits.join(" | ") : 0;
         });
         ok(overlaps === 0, `${name} ${tag}: no overlapping buttons (${overlaps})`);
         if (tag === "desktop" && await page.locator(".bcrm-own-case-actions").count()) {
@@ -388,6 +390,49 @@ fs.writeFileSync(PDF, "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
     ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= 390 && box.y + box.height <= 700, "confirmation dialog fits a 390px viewport");
     await sp2.locator("[data-own-dialog-cancel]").click();
     await sp2.context().close(); await sp.context().close();
+
+    // ------------------------------------------------------------------ C3.10 final-plan payload normalization
+    step("C3.10 — final plan TRANSFER + KEEP_CURRENT_PHONE with claimant owning a phone");
+    const fields = (body) => { const out = {}; const re = /name="([^"]+)"\r\n\r\n([^\r]*)/g; let m; while ((m = re.exec(body))) out[m[1]] = m[2]; return out; };
+    const lastPlan = (page) => { const b = page.raw.filter((x) => /name="op"\r\n\r\nset_final_plan/.test(x)).pop(); return b ? fields(b) : null; };
+    ok((await sql("SELECT COUNT(*) n FROM test_bcrm_phones WHERE customer_id=" + S.claimant))[0].n >= 1, "claimant owns its own phone (runtime reproduction)");
+    const fp = await open(2); await portal(fp, {own_case: caseS});
+    const plan = fp.locator('form[data-own-op="set_final_plan"]').first();
+    await plan.locator("xpath=ancestor::details[1]/summary").click();
+    ok(await plan.locator('[data-own-mode-field="USE_TARGET_PROFILE_PHONE"]').isHidden() && await plan.locator('[name="phone_id"]').isDisabled(), "phone_id hidden and disabled while KEEP_CURRENT_PHONE is selected");
+    await plan.locator('[name="phone_resolution"][value="USE_TARGET_PROFILE_PHONE"]').check();
+    ok(!(await plan.locator('[data-own-mode-field="USE_TARGET_PROFILE_PHONE"]').isHidden()), "USE_TARGET_PROFILE_PHONE reveals the target phone field");
+    await plan.locator('[name="phone_id"]').selectOption({index: 1});
+    await plan.locator('[name="phone_resolution"][value="KEEP_CURRENT_PHONE"]').check();
+    ok((await plan.locator('[name="phone_id"]').inputValue()) === "" && await plan.locator('[name="phone_id"]').isDisabled(), "switching back to KEEP clears and disables the stale phone_id");
+    const riskBefore = (await caseState(fp)).risk;
+    s = await act(fp, "set_final_plan", {}, 0);
+    let pl = lastPlan(fp);
+    ok(pl && pl.final_action === "TRANSFER" && pl.phone_resolution === "KEEP_CURRENT_PHONE" && !("phone_id" in pl) && !("phone" in pl), "KEEP_CURRENT_PHONE payload carries no phone_id and no phone (" + JSON.stringify(pl) + ")");
+    const evs = (await sql("SELECT event_type FROM test_bcrm_ownership_events WHERE case_id=" + caseS + " AND event_type IN ('FINAL_PLAN_CONFIRMED','REQUESTED_TRANSFER_PLAN_CHANGED')")).map((r) => r.event_type);
+    ok(evs.includes("FINAL_PLAN_CONFIRMED") && !evs.includes("REQUESTED_TRANSFER_PLAN_CHANGED"), "unchanged plan → FINAL_PLAN_CONFIRMED only (" + evs.join(",") + ")");
+    const stored = (await sql("SELECT final_phone_id, final_phone_normalized FROM test_bcrm_ownership_case_assets WHERE case_id=" + caseS))[0];
+    ok(stored.final_phone_id === null && stored.final_phone_normalized === null, "stored final plan has phone_id=null and phone=null");
+    ok(riskBefore === "NORMAL" && s.risk === "NORMAL", "risk remains NORMAL after confirming the unchanged plan");
+    s = await act(fp, "set_final_plan", {phone_resolution: "USE_TARGET_PROFILE_PHONE", phone_id: (await sql("SELECT id FROM test_bcrm_phones WHERE customer_id=" + S.claimant))[0].id, reason: "شماره مقصد"}, 0);
+    pl = lastPlan(fp);
+    ok(pl && pl.phone_resolution === "USE_TARGET_PROFILE_PHONE" && pl.phone_id && !("phone" in pl), "USE_TARGET_PROFILE_PHONE sends only phone_id");
+    const plan2 = fp.locator('form[data-own-op="set_final_plan"]').first();
+    if (!(await plan2.locator("xpath=ancestor::details[1]").getAttribute("open"))) await plan2.locator("xpath=ancestor::details[1]/summary").click();
+    await plan2.locator('[name="phone_resolution"][value="PROPOSE_NEW_PHONE"]').check();
+    ok((await plan2.locator('[name="phone_id"]').inputValue()) === "" && await plan2.locator('[name="phone_id"]').isDisabled(), "switching USE → PROPOSE clears the prior phone_id");
+    s = await act(fp, "set_final_plan", {phone: "09398887766", reason: "شماره جدید"}, 0);
+    pl = lastPlan(fp);
+    ok(pl && pl.phone_resolution === "PROPOSE_NEW_PHONE" && pl.phone === "09398887766" && !("phone_id" in pl), "PROPOSE_NEW_PHONE sends only phone");
+    const plan3 = fp.locator('form[data-own-op="set_final_plan"]').first();
+    if (!(await plan3.locator("xpath=ancestor::details[1]").getAttribute("open"))) await plan3.locator("xpath=ancestor::details[1]/summary").click();
+    await plan3.locator('[name="phone_resolution"][value="USE_TARGET_PROFILE_PHONE"]').check();
+    await plan3.locator('[name="phone_id"]').selectOption({index: 1});
+    s = await act(fp, "set_final_plan", {phone_resolution: "CLAIM_CURRENT_PHONE", reason: "ادعای شماره"}, 0, false);
+    await fp.waitForTimeout(600);
+    pl = lastPlan(fp);
+    ok(pl && pl.phone_resolution === "CLAIM_CURRENT_PHONE" && !("phone_id" in pl) && !("phone" in pl), "CLAIM_CURRENT_PHONE does not leak the target profile phone_id");
+    await fp.context().close();
 
     // ------------------------------------------------------------------ FLOW H
     step("FLOW H — legacy locked Attach bridge");

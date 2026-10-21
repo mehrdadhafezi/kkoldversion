@@ -233,3 +233,36 @@ Run: `PHP_EXT_DIR=<php ext dir> tests/browser/run.sh` (needs `php` with pdo_sqli
 - WordPress admin submenu rendering;
 - theme/Elementor interaction with the portal shell;
 - screen-reader and keyboard-only passes on real devices.
+
+## 13. C3.10 — final-plan payload normalization (runtime fix)
+
+**Runtime symptom (WordPress + MySQL).** The request was `TRANSFER + KEEP_CURRENT_PHONE` with no phone. The specialist confirmed the same plan, but the database stored `final_phone_id = 1`. The backend correctly read that as a changed plan and emitted `REQUESTED_TRANSFER_PLAN_CHANGED`, which added `PLAN_OVERRIDE` and made the case `HIGH_RISK`.
+
+**Root cause (UI).** The final-plan form always rendered an enabled target-phone `<select>` and new-phone `<input>`, so `FormData(form)` posted them in every mode. A value left over from earlier interaction, or restored by the browser after the post-action reload, therefore reached `set_final_plan`.
+
+**Fix (UI only; C2 comparison semantics unchanged):**
+
+- **Server-side markup:** each mode-specific input is wrapped in `data-own-mode-field`, and only the selected mode's input is visible, enabled, required and prefilled. The form uses `autocomplete="off"`. The requested-plan comparison attributes are mode-normalized.
+- **`ownership.js`:**
+  - `syncPlanFields()` hides, disables and clears the inputs of other modes on every change. Disabled fields are not serialized.
+  - `normalizePlanPayload()` rebuilds `final_action`, `phone_id` and `phone` from the selected mode right before sending:
+
+    | Mode | Sends |
+    |---|---|
+    | KEEP_CURRENT_PHONE | neither `phone_id` nor `phone` |
+    | CLAIM_CURRENT_PHONE | neither (the phone asset stays separately explicit) |
+    | USE_TARGET_PROFILE_PHONE | only `phone_id` |
+    | PROPOSE_NEW_PHONE | only `phone` |
+  - `planChanged()` compares the mode-normalized values.
+
+**Tests.**
+
+- `tests/ownership-c3-final-plan.php` (runs C2 + C3 + C3.8 first): 33 checks.
+  - An unchanged KEEP plan stores null `phone_id`/`phone`, emits `FINAL_PLAN_CONFIRMED`, never emits `REQUESTED_TRANSFER_PLAN_CHANGED`, and stays NORMAL.
+  - The backend still treats a leaked `phone_id` as a change (semantics untouched).
+  - Rendered inputs are hidden/disabled and never preselected, even with a polluted stored `final_phone_id`.
+  - USE stores only `phone_id`; PROPOSE stores only `phone`.
+- Browser suite (C3.10 section): reproduces the runtime case, with the claimant owning a phone, on a real FormData POST.
+  - Choosing USE with a phone, then switching back to KEEP, clears the stale value.
+  - The KEEP payload has no `phone_id`/`phone`; `FINAL_PLAN_CONFIRMED` is emitted and risk stays NORMAL.
+  - The USE, PROPOSE and CLAIM payloads carry only their own field, and switching modes clears stale values.

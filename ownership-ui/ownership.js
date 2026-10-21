@@ -110,12 +110,40 @@
         });
         return first;
     }
+    /* Final-plan payload by mode: KEEP/CLAIM carry neither phone_id nor phone; USE carries only
+     * phone_id; PROPOSE carries only phone. Stale values from other modes are never sent. */
+    function planMode(form) { var m = qs('input[name="phone_resolution"]:checked', form); return m ? m.value : ""; }
+    function planValues(form) {
+        var mode = planMode(form), pid = qs('[name="phone_id"]', form), phone = qs('[name="phone"]', form);
+        return {
+            action: qs('[name="final_action"]', form).value, mode: mode,
+            phone_id: mode === "USE_TARGET_PROFILE_PHONE" && pid ? String(pid.value || "") : "",
+            phone: mode === "PROPOSE_NEW_PHONE" && phone ? faToEn(phone.value).trim() : ""
+        };
+    }
+    function syncPlanFields(form) {
+        var mode = planMode(form);
+        qsa("[data-own-mode-field]", form).forEach(function (wrap) {
+            var on = wrap.getAttribute("data-own-mode-field") === mode;
+            wrap.hidden = !on;
+            qsa("input,select", wrap).forEach(function (f) {
+                if (!on) { f.value = ""; f.setAttribute("aria-invalid", "false"); }
+                f.disabled = !on; f.required = on;
+            });
+        });
+    }
+    function normalizePlanPayload(form, data) {
+        var v = planValues(form);
+        data.delete("phone_id"); data.delete("phone"); data.delete("final_action");
+        data.append("final_action", v.action);
+        if (v.mode === "USE_TARGET_PROFILE_PHONE") data.append("phone_id", v.phone_id);
+        if (v.mode === "PROPOSE_NEW_PHONE") data.append("phone", v.phone);
+        return data;
+    }
     function planChanged(form) {
-        var mode = qs('input[name="phone_resolution"]:checked', form);
-        return (qs('[name="final_action"]', form).value !== form.dataset.reqAction) ||
-            ((mode ? mode.value : "") !== form.dataset.reqMode) ||
-            (String(Number(qs('[name="phone_id"]', form).value || 0)) !== String(Number(form.dataset.reqPid || 0))) ||
-            ((qs('[name="phone"]', form).value || "").trim() !== (form.dataset.reqPhone || ""));
+        var v = planValues(form);
+        return v.action !== form.dataset.reqAction || v.mode !== form.dataset.reqMode ||
+            String(Number(v.phone_id || 0)) !== String(Number(form.dataset.reqPid || 0)) || v.phone !== (form.dataset.reqPhone || "");
     }
     function validatePlan(form) {
         var errors = [], mode = qs('input[name="phone_resolution"]:checked', form), reason = qs('[name="reason"]', form);
@@ -133,7 +161,7 @@
         function version() { return root.getAttribute("data-own-version"); }
         qsa("[data-own-plan]", root).forEach(function (form) {
             var hint = qs("[data-own-plan-hint]", form);
-            function sync() { var changed = planChanged(form); qs('[name="reason"]', form).required = changed; if (hint) hint.textContent = changed ? "(برنامه با درخواست متفاوت است — دلیل الزامی است)" : "(در صورت تغییر نسبت به درخواست الزامی است)"; }
+            function sync() { syncPlanFields(form); var changed = planChanged(form); qs('[name="reason"]', form).required = changed; if (hint) hint.textContent = changed ? "(برنامه با درخواست متفاوت است — دلیل الزامی است)" : "(در صورت تغییر نسبت به درخواست الزامی است)"; }
             form.addEventListener("change", sync); form.addEventListener("input", sync); sync();
         });
         qsa("[data-own-otp-challenge]", root).forEach(function (select) {
@@ -157,6 +185,7 @@
                 (ask ? confirmDialog(title, ask) : Promise.resolve(true)).then(function (yes) {
                     if (!yes) return;
                     var data = new FormData(form);
+                    if (form.hasAttribute("data-own-plan")) normalizePlanPayload(form, data);
                     data.append("case_id", caseId);
                     data.append("version", version());
                     var progress = qs("[data-own-progress]", form); if (progress) progress.hidden = false;
