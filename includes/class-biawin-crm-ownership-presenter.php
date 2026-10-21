@@ -123,6 +123,7 @@ class Biawin_CRM_Ownership_Presenter
         'SERVICE_OWNER_ALIGNED' => 'هم‌راستاسازی مالک خدمت با فاکتور',
         'OWNERSHIP_LOCK_CREATED' => 'ایجاد قفل مالکیت',
         'OWNERSHIP_LOCK_RELEASED' => 'آزادسازی قفل مالکیت',
+        'LEGACY_LOCK_REVIEW_REQUIRED' => 'نیاز به بررسی تاریخی قفل مالکیت',
         'TRANSFER_COMMITTED' => 'ثبت قطعی انتقال مالکیت',
         'PROFILE_RECALCULATED' => 'بازمحاسبه پروفایل',
         'DEFICIENCY_TRIGGERED' => 'ارجاع به فرایند رفع ناقصی',

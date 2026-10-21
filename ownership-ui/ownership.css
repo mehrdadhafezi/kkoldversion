@@ -202,6 +202,9 @@
   .bcrm-own-beforeafter{grid-template-columns:minmax(0,1fr)}
   .bcrm-own-arrow{transform:rotate(-90deg);justify-self:center}
   .bcrm-own-search,.bcrm-own-search input{width:100%;min-width:0}
+  .bcrm-own-filters{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;max-width:100%}
+  .bcrm-own-chip{flex:0 0 auto}
+  .bcrm-own-toolbar{flex-direction:column;align-items:stretch}
   .bcrm-own-table-wrap{border:0;overflow:visible}
   .bcrm-own-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
   .bcrm-own-table,.bcrm-own-table tbody,.bcrm-own-table tr,.bcrm-own-table td{display:block;width:100%}
