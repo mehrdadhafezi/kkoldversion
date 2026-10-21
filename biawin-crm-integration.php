@@ -33,6 +33,9 @@ require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-workflow.php'
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-otp.php';
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-transfer-service.php';
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-write-guard.php';
+require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-presenter.php'; // C3 UI: read-only view models
+require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-ajax.php'; // C3 UI: thin command adapters
+require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-ui.php'; // C3 UI: workspaces
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-file-safety.php'; // v0.8.63.2
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-upload-normalizer.php';
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-receipt-staging.php';
@@ -85,6 +88,7 @@ add_action('plugins_loaded', function () {
     Biawin_CRM_Finance_Review::init(); // v0.8.62.28: بررسی فیش و تأیید/رد مالی در همان پنجره نمایش فیش
     Biawin_CRM_Finance_Report::register_hooks(); // v0.8.65.11: گزارش فقط‌خواندنی تأیید مالی + Excel
     Biawin_CRM_REST::init();
+    Biawin_CRM_Ownership_UI::init(); // C3: «تطبیق مالکیت» workspaces (portal + admin)
 });
 
 // v0.8.62.3: safety net for EXISTING installations — before any admin screen (or the
