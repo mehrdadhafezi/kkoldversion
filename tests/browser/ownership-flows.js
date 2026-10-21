@@ -42,6 +42,11 @@ async function confirmIfAsked(page) {
     await dialog.locator("[data-own-dialog-confirm]").click();
     return true;
 }
+/** Open the accordion that contains a form, as a user would before using it. */
+async function reveal(form) {
+    const d = form.locator("xpath=ancestor::details[1]");
+    if (await d.count() && (await d.getAttribute("open")) === null) await d.locator("summary").first().click();
+}
 /** Submit a case action form; returns after the authoritative reload. */
 async function act(page, op, fill = {}, nth = 0, expectReload = true) {
     const form = page.locator('form[data-own-op="' + op + '"]').nth(nth);
@@ -298,6 +303,8 @@ fs.writeFileSync(PDF, "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
     sup = await open(5); await portal(sup, {own_case: caseD});
     const rej = sup.locator('form[data-own-op="supervisor_decision"]').nth(1);
     const before = sup.ajax.length;
+    ok(await rej.isHidden(), "destructive supervisor return is collapsed by default (accordion)");
+    await reveal(rej);
     await rej.locator('button[type="submit"]').click();
     ok((await rej.locator("[data-own-form-error]").textContent()).length > 0 && sup.ajax.length === before, "rejection without reason is blocked inline (no request sent)");
     s = await act(sup, "supervisor_decision", {note: "مدرک کنترل شماره کافی نیست"}, 1);
@@ -378,6 +385,7 @@ fs.writeFileSync(PDF, "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
     const sp2 = await open(2); await portal(sp2, {own_case: caseS});
     await act(sp, "record_contact", {result: "no_answer", note: "پاسخ نداد"});
     const rc = sp2.locator('form[data-own-op="record_contact"]');
+    await reveal(rc);
     await rc.locator('button[type="submit"]').click();
     ok((await rc.locator("[data-own-form-error]").textContent()).includes("فیلدهای الزامی") && (await rc.locator('[aria-invalid="true"]').count()) >= 1, "empty required note blocked inline with aria-invalid");
     await act(sp2, "request_evidence", {note: "مدرک"}, 0, false);
@@ -385,7 +393,9 @@ fs.writeFileSync(PDF, "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
     ok(await sp2.locator("[data-own-stale]:not([hidden])").count() === 1, "stale version shows the reload banner");
     await sp2.setViewportSize({width: 390, height: 700});
     await sp2.reload();
+    await reveal(sp2.locator('form[data-own-op="evaluate_risk"]'));
     await sp2.locator('form[data-own-op="evaluate_risk"] button[type="submit"]').click();
+    ok((await sp2.locator("dialog[data-own-dialog][open] .bcrm-own-dialog-facts").textContent()).includes(S.invoice_code) && await sp2.locator("dialog[data-own-dialog][open] .bcrm-own-dialog-reversible.is-no").count() === 1, "confirmation dialog shows case, parties, assets and irreversibility");
     const box = await sp2.locator("dialog[data-own-dialog][open]").boundingBox();
     ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= 390 && box.y + box.height <= 700, "confirmation dialog fits a 390px viewport");
     await sp2.locator("[data-own-dialog-cancel]").click();

@@ -318,3 +318,53 @@
 .bcrm-own [data-own-picker]>label{display:block;font-weight:700;font-size:12.5px;margin:12px 0 4px}
 .bcrm-own [data-own-picker]>textarea{display:block;width:100%;max-width:100%;padding:8px 10px;border:1px solid var(--own-border);border-radius:9px;font:inherit;background:var(--own-surface);color:var(--own-text)}
 .bcrm-own [data-own-picker]>[data-commit]{display:inline-flex;margin-top:10px;min-height:40px}
+
+/* ---- C3.11 operational structure ---------------------------------------------------------- */
+/* Sticky case summary: code, state, risk and the next step stay visible while scrolling. */
+.bcrm-own-sticky{background:var(--own-surface);border:1px solid var(--own-border);border-radius:var(--own-radius);padding:8px 12px;margin-bottom:12px;box-shadow:0 2px 8px rgba(16,24,40,.06)}
+.bcrm-own-sticky-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.bcrm-own-sticky-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:800;font-size:12.5px;direction:ltr;unicode-bidi:isolate}
+.bcrm-own-sticky-next{flex:1 1 280px;min-width:0;display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;line-height:1.7;padding:4px 10px;border-radius:8px;background:var(--own-soft)}
+.bcrm-own-sticky-next.is-you{background:#eaf0ff;color:#14307a;box-shadow:inset 0 0 0 2px var(--own-primary)}
+.bcrm-own-sticky-next .bcrm-own-kicker{display:inline;white-space:nowrap}
+.bcrm-own-sticky .bcrm-own-anchors{margin:8px 0 0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;padding-bottom:2px}
+.bcrm-own-sticky .bcrm-own-anchors a{flex:0 0 auto;white-space:nowrap}
+.bcrm-own-sticky-go{min-height:34px;padding:6px 14px;white-space:nowrap}
+@media (min-width:901px){.bcrm-own-sticky{position:sticky;top:72px;z-index:3}.wrap.bcrm .bcrm-own-sticky{top:40px}}
+.bcrm-own-case-actions:focus{outline:3px solid var(--own-primary);outline-offset:3px;border-radius:var(--own-radius)}
+.bcrm-own-panel{scroll-margin-top:170px}
+
+/* Action accordion: secondary/destructive actions collapse; primary stays open. */
+.bcrm-own-action-toggle{border:1px solid var(--own-border);border-radius:10px;margin-top:8px;background:var(--own-surface)}
+.bcrm-own-action-toggle>summary{cursor:pointer;list-style:none;padding:9px 12px;font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px;min-height:40px}
+.bcrm-own-action-toggle>summary::-webkit-details-marker{display:none}
+.bcrm-own-action-toggle>summary::before{content:"＋";display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:var(--own-soft);font-size:12px}
+.bcrm-own-action-toggle[open]>summary::before{content:"－"}
+.bcrm-own-action-toggle.is-danger>summary{color:var(--own-danger)}
+.bcrm-own-action-toggle>.bcrm-own-action{border-top:1px solid var(--own-border);margin:0;padding:8px 12px 12px}
+.bcrm-own-action-toggle>.bcrm-own-action>h5{display:none}
+.bcrm-own-collapsible>summary{cursor:pointer;font-weight:700;font-size:12.5px;color:var(--own-primary);padding:4px 0}
+
+/* Confirmation dialog: consequence summary */
+.bcrm-own-dialog-facts{margin:0 0 10px;border:1px solid var(--own-border);border-radius:10px;overflow:hidden}
+.bcrm-own-dialog-facts div{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px;padding:7px 10px;border-bottom:1px solid var(--own-border);font-size:12.5px}
+.bcrm-own-dialog-facts div:last-child{border-bottom:0}
+.bcrm-own-dialog-facts dt{color:var(--own-muted);font-weight:700}
+.bcrm-own-dialog-facts dd{margin:0;overflow-wrap:anywhere}
+.bcrm-own-dialog-consequence{font-weight:600}
+.bcrm-own-dialog-reversible{font-weight:800;font-size:12.5px;border-radius:8px;padding:6px 10px}
+.bcrm-own-dialog-reversible.is-no{background:var(--own-danger-bg);color:var(--own-danger)}
+.bcrm-own-dialog-reversible.is-yes{background:var(--own-success-bg);color:var(--own-success)}
+
+/* Lists: rows open the case */
+.bcrm-own-table tr.is-clickable{cursor:pointer}
+.bcrm-own-table tr.is-clickable:hover td{background:#f6f9ff}
+.bcrm-portal-shell.is-dark .bcrm-own-table tr.is-clickable:hover td{background:#131d31}
+.bcrm-own-timeline-more{margin:0 0 10px;min-height:34px}
+@media (max-width:760px){.bcrm-own-dialog-facts div{grid-template-columns:minmax(0,1fr)}.bcrm-own-sticky-go{width:100%}}
+.bcrm-own a.bcrm-primary-button,.bcrm-own a.bcrm-primary-button:visited{color:#fff}
+.bcrm-own-hero.is-compact{padding:10px 16px;margin-bottom:10px}
+.bcrm-own-hero.is-compact h1{font-size:16px;margin:0}
+.bcrm-own-hero.is-compact p{display:none}
+.bcrm-own-hero.is-compact+.bcrm-own-tabs{margin-bottom:8px}
+.bcrm-own a.bcrm-primary-button{text-decoration:none}

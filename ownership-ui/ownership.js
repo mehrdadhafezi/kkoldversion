@@ -44,12 +44,20 @@
         var msg = null; try { msg = sessionStorage.getItem(FLASH); sessionStorage.removeItem(FLASH); } catch (e) {}
         if (msg) { host.innerHTML = '<div class="bcrm-own-alert is-success">' + esc(msg) + "</div>"; }
     }
-    function confirmDialog(title, body) {
+    /* meta: {context: {code, source, claimant, assets[]}, irreversible: bool} — shown as a consequence summary. */
+    function confirmDialog(title, body, meta) {
         var dialog = qs("[data-own-dialog]");
         if (!dialog || typeof dialog.showModal !== "function") return Promise.resolve(window.confirm(title + "\n\n" + body));
-        var opener = document.activeElement;
+        var opener = document.activeElement, ctx = meta && meta.context, html = "";
+        if (ctx) {
+            html += '<dl class="bcrm-own-dialog-facts"><div><dt>پرونده</dt><dd><bdi>' + esc(ctx.code) + "</bdi></dd></div>" +
+                "<div><dt>مالک فعلی ← مدعی</dt><dd>" + esc(ctx.source) + " ← " + esc(ctx.claimant) + "</dd></div>" +
+                (ctx.assets && ctx.assets.length ? "<div><dt>دارایی‌های پرونده</dt><dd><bdi>" + esc(ctx.assets.join("، ")) + "</bdi></dd></div>" : "") + "</dl>";
+        }
+        html += '<p class="bcrm-own-dialog-consequence">' + esc(body) + "</p>";
+        if (meta && meta.irreversible !== undefined) html += '<p class="bcrm-own-dialog-reversible is-' + (meta.irreversible ? "no" : "yes") + '">' + (meta.irreversible ? "⚠ این اقدام برگشت‌پذیر نیست." : "این اقدام بعداً قابل تغییر است.") + "</p>";
         qs("[data-own-dialog-title]", dialog).textContent = title;
-        qs("[data-own-dialog-body]", dialog).innerHTML = "<p>" + esc(body) + "</p>";
+        qs("[data-own-dialog-body]", dialog).innerHTML = html;
         return new Promise(function (resolve) {
             function done() {
                 dialog.removeEventListener("close", done);
@@ -95,6 +103,11 @@
                 chips.forEach(function (chip) { chip.setAttribute("aria-pressed", chip.getAttribute("data-own-filter") === current ? "true" : "false"); });
             }
             chips.forEach(function (chip) { chip.addEventListener("click", function () { current = chip.getAttribute("data-own-filter"); apply(); }); });
+            rows.forEach(function (row) {
+                var href = row.getAttribute("data-own-href"); if (!href) return;
+                row.classList.add("is-clickable");
+                row.addEventListener("click", function (e) { if (e.target.closest("a,button,input,select,textarea,label")) return; if (String(window.getSelection ? window.getSelection() : "")) return; window.location.href = href; });
+            });
             if (search) search.addEventListener("input", apply);
             apply();
         });
@@ -158,6 +171,21 @@
     function initCase() {
         var root = qs("[data-own-case]"); if (!root) return;
         var caseId = root.getAttribute("data-own-case");
+        var caseContext = null; try { caseContext = JSON.parse(root.getAttribute("data-own-context") || "null"); } catch (e) { caseContext = null; }
+        // Browser-restored form state must never be re-posted; every action starts from server truth.
+        qsa("form[data-own-op]", root).forEach(function (f) { f.setAttribute("autocomplete", "off"); });
+        var go = qs(".bcrm-own-sticky-go", root);
+        if (go) go.addEventListener("click", function () { var aside = qs("#own-actions"); if (aside) setTimeout(function () { aside.focus({preventScroll: true}); }, 0); });
+        // Long timelines: show the latest events, reveal older ones on request.
+        qsa(".bcrm-own-timeline", root).forEach(function (list) {
+            var items = qsa(":scope > li", list); if (items.length <= 8) return;
+            var older = items.slice(0, items.length - 8);
+            older.forEach(function (li) { li.hidden = true; });
+            var more = document.createElement("button"); more.type = "button"; more.className = "bcrm-secondary-button bcrm-own-timeline-more";
+            more.textContent = "نمایش " + num(older.length) + " رویداد قدیمی‌تر"; more.setAttribute("aria-expanded", "false");
+            more.addEventListener("click", function () { var open = more.getAttribute("aria-expanded") === "true"; older.forEach(function (li) { li.hidden = open; }); more.setAttribute("aria-expanded", open ? "false" : "true"); more.textContent = open ? "نمایش " + num(older.length) + " رویداد قدیمی‌تر" : "پنهان کردن رویدادهای قدیمی‌تر"; });
+            list.parentNode.insertBefore(more, list);
+        });
         function version() { return root.getAttribute("data-own-version"); }
         qsa("[data-own-plan]", root).forEach(function (form) {
             var hint = qs("[data-own-plan-hint]", form);
@@ -182,13 +210,16 @@
                 if (form.hasAttribute("data-own-plan")) { var errs = validatePlan(form); if (errs.length) { showError(errorHost, {message: errs.join(" ")}); return; } }
                 var ask = form.getAttribute("data-own-confirm");
                 var title = (qs("h4,h5", form) || button || {}).textContent || "تأیید اقدام";
-                (ask ? confirmDialog(title, ask) : Promise.resolve(true)).then(function (yes) {
+                if (form.getAttribute("data-own-busy")) return; // repeated-submission guard
+                var meta = {context: caseContext, irreversible: form.getAttribute("data-own-irreversible") === "1"};
+                (ask ? confirmDialog(title.trim(), ask, meta) : Promise.resolve(true)).then(function (yes) {
                     if (!yes) return;
                     var data = new FormData(form);
                     if (form.hasAttribute("data-own-plan")) normalizePlanPayload(form, data);
                     data.append("case_id", caseId);
                     data.append("version", version());
                     var progress = qs("[data-own-progress]", form); if (progress) progress.hidden = false;
+                    form.setAttribute("data-own-busy", "1");
                     setBusy(button, true, form.hasAttribute("data-own-upload") ? "در حال بارگذاری…" : "در حال ثبت…");
                     post(op, data).then(function (res) {
                         if (progress) progress.hidden = true;
@@ -199,7 +230,7 @@
                             window.location.reload();
                             return;
                         }
-                        setBusy(button, false);
+                        setBusy(button, false); form.removeAttribute("data-own-busy");
                         showError(errorHost, res.error);
                         var fresh = res.error.fresh;
                         if (res.error.code === "stale" || res.error.code === "state" || (fresh && fresh.version !== null && String(fresh.version) !== String(version()))) markStale(root);
