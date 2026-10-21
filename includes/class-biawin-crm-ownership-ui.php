@@ -189,7 +189,7 @@ class Biawin_CRM_Ownership_UI
 
     private static function profile_label(array $p): string
     {
-        return self::e($p['name']) . ($p['code'] !== '' ? ' <small class="bcrm-own-code">' . self::e($p['code']) . '</small>' : '');
+        return '<span class="bcrm-own-name" title="' . esc_attr($p['name']) . '">' . self::e($p['name']) . '</span>' . ($p['code'] !== '' ? ' <small class="bcrm-own-code">' . self::e($p['code']) . '</small>' : '');
     }
 
     private static function alert(string $tone, string $html, string $role = 'note'): string

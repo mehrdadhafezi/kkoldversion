@@ -59,20 +59,7 @@
         window.addEventListener("pageshow", function (e) { if (!e.persisted) return; qsa("form[data-bcrm-submitted]").forEach(function (f) { f.removeAttribute("data-bcrm-submitted"); f.removeAttribute("aria-busy"); qsa("[disabled]", f).forEach(function (b) { b.disabled = false; }); }); });
     }
 
-    /* 5. Loading feedback for the profile «افزودن شماره / فاکتور» search (the frozen script replaces it with results). */
-    function relatedSearchLoading() {
-        document.addEventListener("click", function (e) {
-            var btn = e.target.closest("[data-bcrm-related-search]"); if (!btn) return;
-            var panel = btn.closest("[data-bcrm-related-panel]"); if (!panel) return;
-            var q = qs("[data-bcrm-related-query]", panel), out = qs("[data-bcrm-related-results]", panel);
-            if (!q || !out || q.value.trim().length < 2) return;
-            out.setAttribute("aria-busy", "true");
-            out.innerHTML = '<div data-bcrm-loading role="status">در حال جست‌وجو…</div>';
-            new MutationObserver(function (m, o) { if (!qs("[data-bcrm-loading]", out)) { out.removeAttribute("aria-busy"); o.disconnect(); } }).observe(out, {childList: true});
-        }, true);
-    }
-
-    /* 6. Persian-first labels for the few English-first legacy headings (display text only). */
+    /* 5. Persian-first labels for the few English-first legacy headings (display text only). */
     var COPY = {"Workflow رفع ناقصی": "کارتابل رفع ناقصی", "Data Audit": "ممیزی داده (Data Audit)"};
     function persianCopy() {
         qsa(".bcrm-shell-content h1, .bcrm-shell-content h2, .bcrm-shell-nav a span, .bcrm-quick-actions strong, .bcrm-shell-header strong").forEach(function (el) {
@@ -82,6 +69,6 @@
 
     document.addEventListener("DOMContentLoaded", function () {
         if (!qs(".bcrm-portal-shell")) return;
-        persianCopy(); groupNav(); pageTitle(); clickableRows(); submitGuard(); relatedSearchLoading();
+        persianCopy(); groupNav(); pageTitle(); clickableRows(); submitGuard();
     });
 })();

@@ -23,7 +23,7 @@
 .bcrm-portal-shell .bcrm-case-identity span,.bcrm-portal-shell .bcrm-summary span,.bcrm-portal-shell .bcrm-phone-chips span{unicode-bidi:plaintext}
 .bcrm-portal-shell .bcrm-shell-content td,.bcrm-portal-shell .bcrm-summary span,.bcrm-portal-shell .bcrm-metric-card strong,.bcrm-portal-shell .bcrm-case-money{font-variant-numeric:tabular-nums}
 /* Mixed Persian/Latin values (codes, phones, IDs) never reorder or overflow. */
-.bcrm-portal-shell .bcrm-shell-content td{overflow-wrap:anywhere}
+.bcrm-portal-shell .bcrm-shell-content td{overflow-wrap:break-word}
 
 /* ---------- Focus & interaction ---------- */
 .bcrm-portal-shell a:focus-visible,.bcrm-portal-shell button:focus-visible,.bcrm-portal-shell input:focus-visible,.bcrm-portal-shell select:focus-visible,.bcrm-portal-shell textarea:focus-visible,.bcrm-portal-shell summary:focus-visible,.bcrm-portal-shell [tabindex]:focus-visible{outline:3px solid var(--p-primary)!important;outline-offset:2px!important}
@@ -101,8 +101,8 @@
 .bcrm-portal-shell .bcrm-badge{font-size:11px;padding:3px 9px;line-height:1.6}
 
 /* ---------- Legacy related search (customer profile) ---------- */
-.bcrm-portal-shell .bcrm-related-results [data-bcrm-loading]{color:var(--p-muted);padding:14px;text-align:center}
-.bcrm-portal-shell .bcrm-related-results [data-bcrm-loading]::before{content:"⏳ "}
+.bcrm-portal-shell .bcrm-loading-row{color:var(--p-muted);padding:14px;text-align:center;border:1px dashed var(--p-border);border-radius:var(--p-radius-sm)}
+.bcrm-portal-shell .bcrm-loading-row::before{content:"⏳ "}
 .bcrm-portal-shell .bcrm-bundle-result{border-radius:var(--p-radius-sm);border:1px solid var(--p-border);padding:12px;background:var(--p-surface)}
 .bcrm-portal-shell .bcrm-bundle-result strong{font-size:var(--p-fs)}
 
@@ -114,7 +114,13 @@
 .bcrm-portal-shell .bcrm-tabs-label{font-weight:800;color:var(--p-muted);font-size:var(--p-fs-xs)}
 
 /* ---------- Responsive ---------- */
-@media (max-width:1100px){.bcrm-portal-shell .bcrm-shell-search{min-width:220px}}
+@media (max-width:1100px){
+  .bcrm-portal-shell .bcrm-shell-search{min-width:220px}
+  /* Wide legacy tables scroll inside their own box instead of widening the page. */
+  .bcrm-portal-shell .bcrm-shell-content .widefat{display:block;overflow-x:auto;max-width:100%}
+  .bcrm-portal-shell .bcrm-assign-switches,.bcrm-portal-shell .bcrm-assign-actions{flex-wrap:wrap;max-width:100%;min-width:0}
+  .bcrm-portal-shell .bcrm-assign-execute{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important}
+}
 @media (max-width:760px){
   .bcrm-portal-shell .bcrm-shell-content{padding:12px 12px 32px}
   .bcrm-portal-shell .bcrm-shell-search{min-width:0;width:100%}

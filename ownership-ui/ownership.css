@@ -368,3 +368,7 @@
 .bcrm-own-hero.is-compact p{display:none}
 .bcrm-own-hero.is-compact+.bcrm-own-tabs{margin-bottom:8px}
 .bcrm-own a.bcrm-primary-button{text-decoration:none}
+/* Tables: long profile names clamp to two lines (full name in the tooltip); case codes stay compact. */
+.bcrm-own-table .bcrm-own-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:220px}
+.bcrm-own-table .bcrm-own-case-link{display:inline-block;max-width:150px;word-break:break-all;font-size:11.5px;line-height:1.5}
+@media (max-width:760px){.bcrm-own-table .bcrm-own-name{max-width:none}}
