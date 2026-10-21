@@ -1,0 +1,2 @@
+# Keep existing text endings; do not renormalize the repository.
+* text=auto

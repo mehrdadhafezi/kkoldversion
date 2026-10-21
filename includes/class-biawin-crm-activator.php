@@ -8,7 +8,7 @@ class Biawin_CRM_Activator
 {
     /** Marker bumped whenever role/cap definitions change; drives the admin_init re-grant. */
     const CAPS_MARKER_OPTION = 'biawin_crm_caps_marker';
-    const CAPS_MARKER_VERSION = 7; // v3 = bcrm_refund_register; v4 = after-sales foundation; v5/v6 used by prior releases; v7 = finance-return follow-up compatibility sync
+    const CAPS_MARKER_VERSION = 9; // v9 = ownership requester caps; v8 = ownership C1; v7 = finance-return follow-up compatibility sync
     /**
      * v0.8.63.0 — provisioning ledger: every role the plugin ever created and every capability it
      * ever granted, per role. A capability is granted ONLY if it is not in the ledger (never granted
@@ -29,6 +29,7 @@ class Biawin_CRM_Activator
         '0.8.62.11' => 'migrate_0862_11',
         '0.8.63.0' => 'migrate_0863_0',
         '0.8.64.0' => 'migrate_0864_0',
+        '0.8.65.18' => 'migrate_0865_18',
     ];
 
     /**
@@ -88,7 +89,11 @@ class Biawin_CRM_Activator
                 try {
                     self::$method();
                     // Mark each migration's floor so a later crash does not replay earlier steps.
-                    update_option('biawin_crm_db_version', $migration_version, false);
+                    // The current release is stamped only after schema ensure below.
+                    // Older installs still need full activation; a failure there must retry.
+                    if ($migration_version !== BIAWIN_CRM_VERSION) {
+                        update_option('biawin_crm_db_version', $migration_version, false);
+                    }
                 } catch (Throwable $e) {
                     self::log_upgrade_failure($migration_version, $db_version, $e);
                     return; // version NOT advanced → the next request retries this migration
@@ -97,7 +102,11 @@ class Biawin_CRM_Activator
             // Schema ensure (idempotent) then stamp the plugin version. v0.8.63.2: a failure here is
             // logged and retried on the next request instead of fataling the page.
             try {
-                self::activate();
+                // C1 upgrades from the approved baseline must not replay activation's
+                // assignment repair / Deficiency backfill. The migration ensured its DDL.
+                if (!(BIAWIN_CRM_VERSION === '0.8.65.18' && version_compare($db_version, '0.8.65.17', '>='))) {
+                    self::activate();
+                }
             } catch (Throwable $e) {
                 self::log_upgrade_failure('schema:' . BIAWIN_CRM_VERSION, $db_version, $e);
                 if (version_compare((string)get_option('biawin_crm_db_version', ''), BIAWIN_CRM_VERSION, '>=')) {
@@ -137,6 +146,14 @@ class Biawin_CRM_Activator
     {
         // Schema is ensured by self::activate() right after migrations; nothing destructive here.
         return;
+    }
+
+    /** C1 foundation only; deliberately no legacy data scan or backfill. */
+    private static function migrate_0865_18(): void
+    {
+        Biawin_CRM_Ownership_Schema::ensure();
+        self::sync_roles_and_caps();
+        update_option(self::CAPS_MARKER_OPTION, self::CAPS_MARKER_VERSION, false);
     }
 
     /** v0.8.62.11: invoice_code column on refund_registers (قانون تطبیق کد فاکتور). Idempotent. */
@@ -318,7 +335,7 @@ class Biawin_CRM_Activator
     public static function role_definitions(): array
     {
         $crm_all = ['read','bcrm_work_cases','bcrm_manage_cases','bcrm_import','bcrm_reports','bcrm_sensitive_merge','bcrm_financial_verify','bcrm_complaints','bcrm_services','bcrm_refunds','bcrm_manage_customer_phones','view_deficiency_cases','manage_deficiency_cases','assign_deficiency_cases','process_deficiency_case','send_case_to_finance','complete_deficiency_case','archive_deficiency_case','view_deficiency_reports','process_finance_return_followup','view_finance_cases','manage_finance_cases','assign_finance_cases','review_finance_case','approve_finance_case','reject_finance_case','return_finance_case','view_finance_reports'];
-        return [
+        return array_merge(Biawin_CRM_Ownership_Authorization::role_definitions(), [
             // ---- legacy roles (caps unchanged; after-sales caps are added in after_sales_caps()) ----
             'bcrm_portal_admin' => ['label' => 'مدیر پرتال CRM', 'caps' => $crm_all],
             'bcrm_agent' => ['label' => 'کارشناس تماس CRM', 'caps' => ['read','bcrm_work_cases']],
@@ -340,7 +357,7 @@ class Biawin_CRM_Activator
             'bcrm_loan_agent' => ['label' => 'کارشناس وام CRM', 'caps' => ['read','bcrm_work_cases']],
             'bcrm_treasury_supervisor' => ['label' => 'سرپرست خزانه CRM', 'caps' => ['read','bcrm_work_cases']],
             'bcrm_treasury_agent' => ['label' => 'کارشناس خزانه CRM', 'caps' => ['read','bcrm_work_cases']],
-        ];
+        ]);
     }
 
     /** v0.8.63.0 — after-sales capability foundation (consumed by later phases). */
@@ -471,6 +488,9 @@ class Biawin_CRM_Activator
     {
         $definitions = self::role_definitions();
         $extra = self::after_sales_caps();
+        foreach (Biawin_CRM_Ownership_Authorization::role_capabilities() as $role_name => $caps) {
+            $extra[$role_name] = array_merge($extra[$role_name] ?? [], $caps);
+        }
         $ledger = get_option(self::CAPS_LEDGER_OPTION, null);
         if (!is_array($ledger) || !isset($ledger['roles'], $ledger['caps'])) {
             // First run of the ledger on an EXISTING install: everything the pre-0.8.63 code
@@ -1150,6 +1170,13 @@ class Biawin_CRM_Activator
 
         foreach ($sql as $statement) {
             dbDelta($statement);
+        }
+
+        try {
+            Biawin_CRM_Ownership_Schema::ensure();
+        } catch (Throwable $e) {
+            $wpdb->suppress_errors($previous_suppression);
+            throw $e;
         }
 
         // v0.8.62.11: ستون کد فاکتور در refund_registers (برای ردیف‌های موجود ALTER بدون تغییر داده).

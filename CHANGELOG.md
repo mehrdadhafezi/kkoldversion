@@ -1,3 +1,11 @@
+## 0.8.65.18 — Ownership Reconciliation C1
+
+- Add seven ownership foundation tables and four nullable canonical invoice-phone columns.
+- Add ownership specialist/supervisor capability definitions through the existing provisioning ledger.
+- Add an opt-in, paginated read-only legacy invoice-phone audit; no backfill or ownership changes.
+- Keep the upgrade from 0.8.65.17 scoped to C1, without replaying activation data repairs.
+- No UI, workflow guards, transfer engine, or Deficiency/Finance changes.
+
 ## 0.8.65.17
 - FIX — در «مرحله اقدام اولیه → ثبت تماس»، گزینه‌های «عدم پاسخ» و «در انتظار ارسال فیش» دوباره همیشه نمایش داده می‌شوند؛ اضافه‌شدن «ثبت پیگیری» دیگر این دو نتیجه تماس قدیمی را حذف نمی‌کند.
 - «ثبت پیگیری» با پنج ریزوضعیت قبلی همچنان در همه پرونده‌های فعال رفع ناقصی باقی مانده است؛ این اصلاح فقط حذف ناخواسته گزینه‌های ثبت تماس را برمی‌گرداند.

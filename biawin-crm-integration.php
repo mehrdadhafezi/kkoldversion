@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Biawin CRM Customer Integration
  * Description: افزونه یکپارچه‌سازی مشتریان، تجمیع فاکتورها، رضایت‌سنجی، شکایات، گریدبندی و تخصیص پرونده به کارشناسان.
- * Version: 0.8.65.17
+ * Version: 0.8.65.18
  * Author: Biawin
  * Text Domain: biawin-crm
  * Requires PHP: 7.4
@@ -13,13 +13,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BIAWIN_CRM_VERSION', '0.8.65.17');
+define('BIAWIN_CRM_VERSION', '0.8.65.18');
 define('BIAWIN_CRM_FILE', __FILE__);
 define('BIAWIN_CRM_DIR', plugin_dir_path(__FILE__));
 define('BIAWIN_CRM_URL', plugin_dir_url(__FILE__));
 
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-activator.php';
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-db.php';
+require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-schema.php';
+require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-authorization.php';
+require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-migration-audit.php';
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-file-safety.php'; // v0.8.63.2
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-upload-normalizer.php';
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-receipt-staging.php';
