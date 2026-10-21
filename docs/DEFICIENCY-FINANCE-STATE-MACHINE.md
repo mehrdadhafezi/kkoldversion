@@ -711,3 +711,9 @@ This document describes **what the v0.8.65.17 source currently does**. It does n
 - that legacy data follows the newest state assumptions.
 
 Those require runtime/database evidence separately.
+
+## C2 integration note — 0.8.65.19
+
+Ownership holds are orthogonal to every state and transition above. Ordinary mutation dispatch, receipt review/promotion, and persisted writes reject held profiles through centralized ownership guards. Read access and existing case records remain available; no ownership action changes Deficiency/Finance state during Draft or Submit. There are no new Deficiency/Finance constants or transition rules.
+
+After an approved ownership transfer commits, the dedicated transfer service recalculates both profiles through the existing Customer/Workflow services. Their normal financial reconciliation and Deficiency behavior remains authoritative. Recalculation and its checkpoint are transactional; failure retains both ownership holds and an ownership-domain recovery marker. See `OWNERSHIP-RECONCILIATION-C2-REPORT.md` for actual test evidence and blocked live acceptance.

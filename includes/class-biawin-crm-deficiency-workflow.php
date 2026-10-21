@@ -68,7 +68,7 @@ class Biawin_CRM_Deficiency_Workflow
                 $customer_id
             ));
             if ($existing) {
-                $wpdb->update($cases, [
+                Biawin_CRM_DB::write('update', $cases, [
                     'status' => 'COMPLETED',
                     'current_department' => 'deficiency',
                     'final_decision' => 'auto_tolerance',
@@ -85,7 +85,7 @@ class Biawin_CRM_Deficiency_Workflow
         ));
         $now = Biawin_CRM_DB::now();
         if ($existing) {
-            $wpdb->update($cases, [
+            Biawin_CRM_DB::write('update', $cases, [
                 'reported_amount' => $reported,
                 'registered_invoice_amount' => $registered,
                 'difference_amount' => $difference,
@@ -93,7 +93,7 @@ class Biawin_CRM_Deficiency_Workflow
             ], ['id' => $existing]);
             return $existing;
         }
-        $inserted = $wpdb->insert($cases, [
+        $inserted = Biawin_CRM_DB::write('insert', $cases, [
             'case_code' => self::next_case_code(),
             'customer_id' => $customer_id,
             'status' => 'INCOMPLETE_NEW',
@@ -159,7 +159,7 @@ class Biawin_CRM_Deficiency_Workflow
         $cases = Biawin_CRM_DB::table('deficiency_cases');
         $assigned = 0;
         foreach ($case_ids as $case_id) {
-            $wpdb->query('START TRANSACTION');
+            Biawin_CRM_DB::write('query', 'START TRANSACTION');
             try {
                 $case = $wpdb->get_row($wpdb->prepare("SELECT * FROM $cases WHERE id=%d FOR UPDATE", $case_id));
                 if (!$case || in_array((string)$case->status, ['COMPLETED','ARCHIVED'], true)) throw new RuntimeException('skip');
@@ -178,13 +178,13 @@ class Biawin_CRM_Deficiency_Workflow
                     $data = ['deficiency_agent_id'=>$agent_id,'assigned_at'=>Biawin_CRM_DB::now(),'status'=>$to,'current_department'=>'deficiency','updated_at'=>Biawin_CRM_DB::now()];
                     $event = (string)$case->status === 'INCOMPLETE_NEW' ? 'DEFICIENCY_ASSIGNED' : 'DEFICIENCY_REASSIGNED';
                 }
-                $ok = $wpdb->update($cases, $data, ['id'=>$case_id]);
+                $ok = Biawin_CRM_DB::write('update', $cases, $data, ['id'=>$case_id]);
                 if ($ok === false) throw new RuntimeException('db');
                 self::action($case_id, (int)$case->customer_id, $department, $event, (string)$case->status, $to, ['agent_user_id'=>$agent_id]);
-                $wpdb->query('COMMIT');
+                Biawin_CRM_DB::write('query', 'COMMIT');
                 $assigned++;
             } catch (Throwable $e) {
-                $wpdb->query('ROLLBACK');
+                Biawin_CRM_DB::write('query', 'ROLLBACK');
             }
         }
         return ['ok'=>true,'assigned'=>$assigned];
@@ -345,7 +345,7 @@ class Biawin_CRM_Deficiency_Workflow
         $returnable_status = $department === 'finance' ? 'FINANCE_ASSIGNED' : 'INCOMPLETE_ASSIGNED';
         $returned = 0;
         foreach ($case_ids as $case_id) {
-            $wpdb->query('START TRANSACTION');
+            Biawin_CRM_DB::write('query', 'START TRANSACTION');
             try {
                 $case = $wpdb->get_row($wpdb->prepare("SELECT * FROM $cases WHERE id=%d FOR UPDATE", $case_id));
                 if (!$case || in_array((string)$case->status, ['COMPLETED','ARCHIVED'], true)) throw new RuntimeException('skip');
@@ -359,13 +359,13 @@ class Biawin_CRM_Deficiency_Workflow
                     $to = 'INCOMPLETE_NEW';
                     $event = 'DEFICIENCY_ASSIGNMENT_RETURNED';
                 }
-                $ok = $wpdb->update($cases, $data, ['id'=>$case_id]);
+                $ok = Biawin_CRM_DB::write('update', $cases, $data, ['id'=>$case_id]);
                 if ($ok === false) throw new RuntimeException('db');
                 self::action($case_id, (int)$case->customer_id, $department, $event, (string)$case->status, $to, ['agent_user_id'=>$agent_id]);
-                $wpdb->query('COMMIT');
+                Biawin_CRM_DB::write('query', 'COMMIT');
                 $returned++;
             } catch (Throwable $e) {
-                $wpdb->query('ROLLBACK');
+                Biawin_CRM_DB::write('query', 'ROLLBACK');
             }
         }
         return ['ok'=>true,'returned'=>$returned];
@@ -380,6 +380,7 @@ class Biawin_CRM_Deficiency_Workflow
         $case = $wpdb->get_row($wpdb->prepare("SELECT * FROM $cases WHERE id=%d", $case_id));
         if (!$case) return ['ok'=>false,'message'=>'پرونده پیدا نشد.'];
         if (!self::can_access_case($case)) return ['ok'=>false,'message'=>'دسترسی به این پرونده مجاز نیست.'];
+        Biawin_CRM_DB::assert_customer_mutable((int)$case->customer_id);
         if (in_array((string)$case->status, ['COMPLETED','ARCHIVED'], true)) return ['ok'=>false,'message'=>'پرونده بسته شده و قابل تغییر نیست.'];
 
         if ($action === 'contact') {
@@ -552,7 +553,7 @@ class Biawin_CRM_Deficiency_Workflow
         if ($receipt_amount !== null) {
             $note = trim($note . ' | مبلغ فیش: ' . number_format_i18n((float)$receipt_amount));
         }
-        $saved = $wpdb->insert(Biawin_CRM_DB::table('attachments'), [
+        $saved = Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('attachments'), [
             'customer_id'=>(int)$case->customer_id,
             'object_type'=>'deficiency_case',
             'object_id'=>(int)$case->id,
@@ -670,7 +671,7 @@ class Biawin_CRM_Deficiency_Workflow
         // v0.8.65.2: a stale detail page can still show INCOMPLETE_NEW after assignment refresh.
         // If this user is the assigned deficiency agent (or a supervisor), promote it safely to an actionable state instead of the cryptic guard error.
         if ((string)$case->status === 'INCOMPLETE_NEW' && (current_user_can('manage_deficiency_cases') || (int)$case->deficiency_agent_id === get_current_user_id())) {
-            $promoted = $wpdb->update(Biawin_CRM_DB::table('deficiency_cases'), ['status'=>'INCOMPLETE_ASSIGNED','current_department'=>'deficiency','updated_at'=>Biawin_CRM_DB::now()], ['id'=>(int)$case->id,'status'=>'INCOMPLETE_NEW']);
+            $promoted = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('deficiency_cases'), ['status'=>'INCOMPLETE_ASSIGNED','current_department'=>'deficiency','updated_at'=>Biawin_CRM_DB::now()], ['id'=>(int)$case->id,'status'=>'INCOMPLETE_NEW']);
             if ($promoted !== false) $case->status = 'INCOMPLETE_ASSIGNED';
         }
         if (!in_array((string)$case->status, ['DEFICIENCY_UNDER_REVIEW','INCOMPLETE_ASSIGNED','CUSTOMER_CONTACT_PENDING','READY_FOR_FINAL_DECISION','RETURNED_TO_DEFICIENCY'], true)) {
@@ -740,7 +741,7 @@ class Biawin_CRM_Deficiency_Workflow
                 $case->reported_amount = $live_customer->declared_paid === null ? $case->reported_amount : (float)$live_customer->declared_paid;
                 $case->registered_invoice_amount = (float)$live_customer->total_paid;
                 $case->difference_amount = (float)$case->reported_amount - (float)$case->registered_invoice_amount;
-                $wpdb->update(Biawin_CRM_DB::table('deficiency_cases'), ['reported_amount'=>$case->reported_amount,'registered_invoice_amount'=>$case->registered_invoice_amount,'difference_amount'=>$case->difference_amount,'updated_at'=>Biawin_CRM_DB::now()], ['id'=>(int)$case->id]);
+                Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('deficiency_cases'), ['reported_amount'=>$case->reported_amount,'registered_invoice_amount'=>$case->registered_invoice_amount,'difference_amount'=>$case->difference_amount,'updated_at'=>Biawin_CRM_DB::now()], ['id'=>(int)$case->id]);
             }
             $existing_atts = $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . Biawin_CRM_DB::table('attachments') . ' WHERE object_type=%s AND object_id=%d', 'deficiency_case', (int)$case->id));
             $existing_receipts = self::analyze_case_receipts(is_array($existing_atts)?$existing_atts:[]);
@@ -776,7 +777,7 @@ class Biawin_CRM_Deficiency_Workflow
                 $case->reported_amount = $live_customer->declared_paid === null ? $case->reported_amount : (float)$live_customer->declared_paid;
                 $case->registered_invoice_amount = (float)$live_customer->total_paid;
                 $case->difference_amount = (float)$case->reported_amount - (float)$case->registered_invoice_amount;
-                $wpdb->update(Biawin_CRM_DB::table('deficiency_cases'), ['reported_amount'=>$case->reported_amount,'registered_invoice_amount'=>$case->registered_invoice_amount,'difference_amount'=>$case->difference_amount,'updated_at'=>Biawin_CRM_DB::now()], ['id'=>(int)$case->id]);
+                Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('deficiency_cases'), ['reported_amount'=>$case->reported_amount,'registered_invoice_amount'=>$case->registered_invoice_amount,'difference_amount'=>$case->difference_amount,'updated_at'=>Biawin_CRM_DB::now()], ['id'=>(int)$case->id]);
             }
             $all_atts = $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . Biawin_CRM_DB::table('attachments') . ' WHERE object_type=%s AND object_id=%d', 'deficiency_case', (int)$case->id));
             $receipt_check = self::analyze_case_receipts(is_array($all_atts)?$all_atts:[]);
@@ -802,7 +803,7 @@ class Biawin_CRM_Deficiency_Workflow
                 // request's uploads back; previous-round attachments stay untouched.
                 foreach ($documents as $doc) {
                     $att_id = (int)($doc['attachment_id'] ?? 0);
-                    if ($att_id > 0) $wpdb->delete(Biawin_CRM_DB::table('attachments'), ['id'=>$att_id]);
+                    if ($att_id > 0) Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('attachments'), ['id'=>$att_id]);
                     $wp_att = (int)($doc['wp_attachment_id'] ?? 0);
                     if ($wp_att > 0) wp_delete_attachment($wp_att, true);
                 }
@@ -843,7 +844,7 @@ class Biawin_CRM_Deficiency_Workflow
             // Roll back everything persisted in THIS request; previous-round attachments stay untouched.
             foreach ($documents as $doc) {
                 $att_id = (int)($doc['attachment_id'] ?? 0);
-                if ($att_id > 0) $wpdb->delete(Biawin_CRM_DB::table('attachments'), ['id'=>$att_id]);
+                if ($att_id > 0) Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('attachments'), ['id'=>$att_id]);
                 $wp_att = (int)($doc['wp_attachment_id'] ?? 0);
                 if ($wp_att > 0) { wp_delete_attachment($wp_att, true); $rolled_back_attachment_ids[] = $wp_att; }
             }
@@ -941,7 +942,7 @@ class Biawin_CRM_Deficiency_Workflow
             $case->reported_amount = $live_customer->declared_paid === null ? $case->reported_amount : (float)$live_customer->declared_paid;
             $case->registered_invoice_amount = (float)$live_customer->total_paid;
             $case->difference_amount = (float)$case->reported_amount - (float)$case->registered_invoice_amount;
-            $wpdb->update(Biawin_CRM_DB::table('deficiency_cases'), [
+            Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('deficiency_cases'), [
                 'reported_amount'=>$case->reported_amount,
                 'registered_invoice_amount'=>$case->registered_invoice_amount,
                 'difference_amount'=>$case->difference_amount,
@@ -974,7 +975,7 @@ class Biawin_CRM_Deficiency_Workflow
             // uploads back so we never keep uploaded receipts without a sent case.
             foreach ($documents as $doc) {
                 $att_id = (int)($doc['attachment_id'] ?? 0);
-                if ($att_id > 0) $wpdb->delete(Biawin_CRM_DB::table('attachments'), ['id'=>$att_id]);
+                if ($att_id > 0) Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('attachments'), ['id'=>$att_id]);
                 $wp_att = (int)($doc['wp_attachment_id'] ?? 0);
                 if ($wp_att > 0) wp_delete_attachment($wp_att, true);
             }
@@ -1122,7 +1123,7 @@ class Biawin_CRM_Deficiency_Workflow
         if (!$latest_interaction_id) {
             return ['ok'=>false,'message'=>'رکورد تماس مبنای مبلغ اعلامی پیدا نشد؛ ابتدا یک تماس معتبر برای مشتری ثبت کنید.'];
         }
-        $interaction_updated = $wpdb->update($interactions, ['declared_paid'=>$corrected], ['id'=>$latest_interaction_id]);
+        $interaction_updated = Biawin_CRM_DB::write('update', $interactions, ['declared_paid'=>$corrected], ['id'=>$latest_interaction_id]);
         if ($interaction_updated === false) return ['ok'=>false,'message'=>'اصلاح مبلغ اعلامی در سابقه تماس ذخیره نشد.'];
 
         // Recalculate all customer-level monetary fields so the corrected value is immediately
@@ -1140,7 +1141,7 @@ class Biawin_CRM_Deficiency_Workflow
 
         // Keep the deficiency case snapshot in sync with the customer profile so every place
         // that renders "مبلغ اعلامی" reads the corrected value immediately.
-        $case_update = $wpdb->update(Biawin_CRM_DB::table('deficiency_cases'), [
+        $case_update = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('deficiency_cases'), [
             'reported_amount'=>$corrected,
             'registered_invoice_amount'=>$invoice_total,
             'difference_amount'=>$difference,
@@ -1151,7 +1152,7 @@ class Biawin_CRM_Deficiency_Workflow
 
         // sync_customer() has a configurable tolerance. Override only the completeness result of
         // this explicit correction action so a near-match never becomes complete by accident.
-        $profile_update = $wpdb->update($customers, [
+        $profile_update = Biawin_CRM_DB::write('update', $customers, [
             'declared_paid'=>$corrected,
             'discrepancy_amount'=>$difference,
             'profile_completeness'=>$is_exact_match ? 'complete' : 'incomplete',
@@ -1285,7 +1286,7 @@ class Biawin_CRM_Deficiency_Workflow
         $tolerance = max(500000, (float) Biawin_CRM_Workflow_Service::settings()['reconciliation_tolerance']);
         if (abs($declared - $reconciled) > $tolerance) return null;
 
-        $updated = $wpdb->update($customers, [
+        $updated = Biawin_CRM_DB::write('update', $customers, [
             'declared_paid'=>$declared,
             'profile_completeness'=>'complete',
             'completion_source'=>'FINANCE_WORKFLOW',
@@ -1337,7 +1338,7 @@ class Biawin_CRM_Deficiency_Workflow
                 $meta['final_approved_amount'] = $final_approved_amount;
             }
             $data['completed_at'] = Biawin_CRM_DB::now();
-            $wpdb->update(Biawin_CRM_DB::table('customers'), [
+            Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'), [
                 'profile_completeness'=>'complete',
                 'completion_source'=>'DEFICIENCY_WORKFLOW',
                 'status'=>'verified',
@@ -1357,18 +1358,18 @@ class Biawin_CRM_Deficiency_Workflow
         global $wpdb;
         $cases = Biawin_CRM_DB::table('deficiency_cases');
         $data['status'] = $to;
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             $locked = $wpdb->get_row($wpdb->prepare("SELECT status FROM $cases WHERE id=%d FOR UPDATE", $case_id));
             if (!$locked) throw new RuntimeException('پرونده پیدا نشد.');
             if ((string)$locked->status !== $from) throw new RuntimeException('وضعیت پرونده همزمان تغییر کرده است؛ صفحه را تازه‌سازی کنید.');
-            $ok = $wpdb->update($cases, $data, ['id'=>$case_id, 'status'=>$from]);
+            $ok = Biawin_CRM_DB::write('update', $cases, $data, ['id'=>$case_id, 'status'=>$from]);
             if ($ok === false) throw new RuntimeException('ذخیره وضعیت انجام نشد.');
             self::action($case_id, $customer_id, $department, $event, $from, $to, $meta);
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             return ['ok'=>true,'message'=>'عملیات با موفقیت ثبت شد.'];
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>$e->getMessage() ?: 'عملیات انجام نشد.'];
         }
     }
@@ -1377,7 +1378,7 @@ class Biawin_CRM_Deficiency_Workflow
     {
         global $wpdb;
         $now = Biawin_CRM_DB::now();
-        $wpdb->insert(Biawin_CRM_DB::table('case_actions'), [
+        Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('case_actions'), [
             'case_id'=>$case_id,
             'customer_id'=>$customer_id,
             'department'=>sanitize_key($department),
@@ -1397,7 +1398,7 @@ class Biawin_CRM_Deficiency_Workflow
     {
         global $wpdb;
         $table = Biawin_CRM_DB::table('customer_tags');
-        $wpdb->query($wpdb->prepare(
+        Biawin_CRM_DB::write('query', $wpdb->prepare(
             "INSERT INTO $table (customer_id,tag,case_id,created_by,created_at) VALUES (%d,%s,%d,%d,%s) ON DUPLICATE KEY UPDATE case_id=VALUES(case_id)",
             $customer_id, sanitize_text_field($tag), $case_id ?: 0, get_current_user_id() ?: 0, Biawin_CRM_DB::now()
         ));
@@ -2478,17 +2479,17 @@ class Biawin_CRM_Deficiency_Workflow
         $att = $wpdb->get_row($wpdb->prepare("SELECT * FROM $atts WHERE id=%d AND object_type='deficiency_case' AND object_id=%d AND file_kind='bank_receipt'", $attachment_id, $case_id));
         if (!$att) return ['ok'=>false,'message'=>'فیش انتخاب‌شده در این پرونده پیدا نشد.'];
         $review = $wpdb->get_row($wpdb->prepare("SELECT * FROM $reviews WHERE attachment_id=%d AND case_id=%d", $attachment_id, $case_id), ARRAY_A);
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
-            $wpdb->delete($reviews, ['attachment_id'=>$attachment_id,'case_id'=>$case_id]);
-            $deleted = $wpdb->delete($atts, ['id'=>$attachment_id,'object_id'=>$case_id]);
+            Biawin_CRM_DB::write('delete', $reviews, ['attachment_id'=>$attachment_id,'case_id'=>$case_id]);
+            $deleted = Biawin_CRM_DB::write('delete', $atts, ['id'=>$attachment_id,'object_id'=>$case_id]);
             if ($deleted === false) throw new RuntimeException('db');
             self::action($case_id, (int)$case->customer_id, 'deficiency', 'RECEIPT_DELETED_BY_DEFICIENCY_SUPERVISOR', (string)$case->status, (string)$case->status, [
                 'attachment_id'=>$attachment_id,'wp_attachment_id'=>(int)$att->wp_attachment_id,'note'=>(string)$att->note,'review'=>$review,
             ]);
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>'حذف فیش انجام نشد.'];
         }
         if ((int)$att->wp_attachment_id > 0) wp_delete_attachment((int)$att->wp_attachment_id, true);

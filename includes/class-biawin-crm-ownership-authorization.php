@@ -41,4 +41,16 @@ class Biawin_CRM_Ownership_Authorization
             'administrator' => $supervisor,
         ];
     }
+    public static function require_cap(string $cap): void {
+        if (!get_current_user_id() || !current_user_can($cap)) throw new RuntimeException('Ownership permission denied: ' . $cap);
+    }
+    public static function scope(object $case, string $cap, bool $requester = false): void {
+        self::require_cap($cap);
+        if ($requester) {
+            if ((int)$case->requested_by_user_id !== get_current_user_id()) throw new RuntimeException('Only your own ownership claims are accessible.');
+            return;
+        }
+        if (current_user_can('assign_ownership_cases')) return;
+        if ((int)$case->assigned_to_user_id !== get_current_user_id()) throw new RuntimeException('Ownership case is not assigned to you.');
+    }
 }

@@ -326,7 +326,7 @@ class Biawin_CRM_Controlled_Reconstruction
         $state['next_index']=50;
         $state['total_chunks']=10;
         $state['last_chunk']=['chunk'=>1,'status'=>'recovered_from_journal','profiles'=>50,'records'=>150,'verified'=>150,'recovered_at'=>current_time('mysql')];
-        $u=$wpdb->update($runs,['status'=>'committing','result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)],['id'=>(int)$run['id']]);
+        $u=Biawin_CRM_DB::write('update', $runs,['status'=>'committing','result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)],['id'=>(int)$run['id']]);
         if($u===false)return ['ok'=>false,'error'=>'RUN_STATE_RECOVERY_WRITE_FAILED'];
         $fresh=$wpdb->get_row($wpdb->prepare("SELECT * FROM $runs WHERE id=%d",(int)$run['id']),ARRAY_A);
         $fresh_state=$fresh?self::run_state($fresh):[];
@@ -400,7 +400,7 @@ class Biawin_CRM_Controlled_Reconstruction
         $state['last_chunk']=['chunk'=>$chunk_no,'status'=>'reconciled_from_journal','profiles'=>count($profiles),'records'=>(int)$proof['expected_records'],'verified'=>(int)$proof['verified_records'],'recovered_at'=>current_time('mysql')];
         $done=(int)$state['next_index']>=self::BATCH_COUNT;$status=$done?'committed':'committing';
         $upd=['status'=>$status,'result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)];if($done){$upd['committed_at']=current_time('mysql');$upd['completed_at']=current_time('mysql');}
-        $u=$wpdb->update(self::runs_table(),$upd,['id'=>(int)$run['id']]);
+        $u=Biawin_CRM_DB::write('update', self::runs_table(),$upd,['id'=>(int)$run['id']]);
         if($u===false)return ['advanced'=>false,'state'=>$state,'proof'=>$proof,'error'=>'STALE_PROGRESS_RECOVERY_WRITE_FAILED'];
         return ['advanced'=>true,'state'=>$state,'proof'=>$proof,'chunk'=>$chunk_no,'done'=>$done];
     }
@@ -414,7 +414,7 @@ class Biawin_CRM_Controlled_Reconstruction
             $pre=self::preflight();
             if(empty($pre['ok'])||(int)($pre['counts']['profiles']??0)!==self::BATCH_COUNT)return ['ok'=>false,'error'=>'Full Job Preflight نتوانست کل Frozen Plan را ارزیابی کند؛ Job شروع نشد.','preflight'=>$pre];
             $state=['profiles_committed'=>0,'records_moved'=>0,'customer_status_updates'=>0,'verified_records'=>0,'verification_failures'=>0,'skipped'=>0,'chunks_committed'=>0,'next_index'=>0,'total_chunks'=>(int)ceil(self::BATCH_COUNT/self::CHUNK_SIZE),'last_chunk'=>null,'quarantined_profiles'=>[]];
-            $uuid=wp_generate_uuid4();$wpdb->insert($runs,['run_uuid'=>$uuid,'plugin_version'=>BIAWIN_CRM_VERSION,'mode'=>self::MODE,'status'=>'committing','pilot_count'=>self::BATCH_COUNT,'started_by'=>get_current_user_id(),'started_at'=>current_time('mysql'),'manifest_hash'=>$manifest_hash,'preflight_json'=>wp_json_encode($pre,JSON_UNESCAPED_UNICODE),'result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)]);
+            $uuid=wp_generate_uuid4();Biawin_CRM_DB::write('insert', $runs,['run_uuid'=>$uuid,'plugin_version'=>BIAWIN_CRM_VERSION,'mode'=>self::MODE,'status'=>'committing','pilot_count'=>self::BATCH_COUNT,'started_by'=>get_current_user_id(),'started_at'=>current_time('mysql'),'manifest_hash'=>$manifest_hash,'preflight_json'=>wp_json_encode($pre,JSON_UNESCAPED_UNICODE),'result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)]);
             $run=$wpdb->get_row($wpdb->prepare("SELECT * FROM $runs WHERE id=%d",(int)$wpdb->insert_id),ARRAY_A); if(!$run)return ['ok'=>false,'error'=>'ساخت Job Run ناموفق بود.'];
         }
         $state=self::run_state($run);
@@ -425,12 +425,12 @@ class Biawin_CRM_Controlled_Reconstruction
         $start=(int)$state['next_index']; if($start>=self::BATCH_COUNT)return ['ok'=>true,'action'=>'Controlled Job 988 already complete','run_id'=>(int)$run['id'],'run_uuid'=>$run['run_uuid'],'counts'=>$state];
         $chunk_profiles=array_slice($plan['profiles'],$start,self::CHUNK_SIZE); $chunk_no=(int)floor($start/self::CHUNK_SIZE)+1;
         $chunk_pre=self::preflight_profiles($chunk_profiles);
-        if(empty($chunk_pre['ok'])){$state['last_chunk']=['chunk'=>$chunk_no,'status'=>'blocked_system','preflight'=>$chunk_pre];$wpdb->update($runs,['status'=>'paused_safety_block','result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)],['id'=>(int)$run['id']]);return ['ok'=>false,'error'=>'Chunk '.$chunk_no.' preflight سیستمی ناموفق بود؛ هیچ تغییری انجام نشد.','run_id'=>(int)$run['id'],'counts'=>$state,'preflight'=>$chunk_pre];}
+        if(empty($chunk_pre['ok'])){$state['last_chunk']=['chunk'=>$chunk_no,'status'=>'blocked_system','preflight'=>$chunk_pre];Biawin_CRM_DB::write('update', $runs,['status'=>'paused_safety_block','result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)],['id'=>(int)$run['id']]);return ['ok'=>false,'error'=>'Chunk '.$chunk_no.' preflight سیستمی ناموفق بود؛ هیچ تغییری انجام نشد.','run_id'=>(int)$run['id'],'counts'=>$state,'preflight'=>$chunk_pre];}
 
         $pre_by_old=[];foreach((array)$chunk_pre['profiles'] as $pp)$pre_by_old[(int)$pp['old_internal_id']]=$pp;
         $local=['profiles_committed'=>0,'records_moved'=>0,'customer_status_updates'=>0,'verified_records'=>0,'verification_failures'=>0,'skipped'=>0];
         $quarantined=[];$committed_profiles=[];
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try{
             $customers=Biawin_CRM_DB::table('customers');$assignments=Biawin_CRM_DB::table('assignments');
             foreach($chunk_profiles as $p){
@@ -473,7 +473,7 @@ class Biawin_CRM_Controlled_Reconstruction
                 foreach($locked_records as $lr){
                     $rec=$lr['rec'];$table=$lr['table'];$before=$lr['before'];$rid=(int)$rec['record_id'];
                     $data=['customer_id'=>$tid];if($rec['table']==='activities'&&($before['object_type']??'')==='customer'&&(int)($before['object_id']??0)===$oid)$data['object_id']=$tid;
-                    $u=$wpdb->update($table,$data,['id'=>$rid,'customer_id'=>$oid]);if($u!==1)throw new Exception('UPDATE_FAILED_'.$rec['table'].'_'.$rid);
+                    $u=Biawin_CRM_DB::write('update', $table,$data,['id'=>$rid,'customer_id'=>$oid]);if($u!==1)throw new Exception('UPDATE_FAILED_'.$rec['table'].'_'.$rid);
                     $after=$wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id=%d",$rid),ARRAY_A);self::journal((int)$run['id'],$rec['table'],$rid,$before,$after);$local['records_moved']++;
                 }
                 $local['profiles_committed']++;$committed_profiles[]=$p;
@@ -492,15 +492,15 @@ class Biawin_CRM_Controlled_Reconstruction
             $state['last_chunk']=['chunk'=>$chunk_no,'status'=>$quarantined?'committed_with_quarantine':'committed','processed'=>count($chunk_profiles),'profiles_committed'=>$local['profiles_committed'],'quarantined'=>count($quarantined),'records'=>$local['records_moved'],'verified'=>$local['verified_records'],'quarantine'=>$quarantined];
             $done=$state['next_index']>=self::BATCH_COUNT;$status=$done?((int)$state['skipped']>0?'committed_with_quarantine':'committed'):'committing';
             $upd=['status'=>$status,'result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)];if($done){$upd['committed_at']=current_time('mysql');$upd['completed_at']=current_time('mysql');}
-            $ru=$wpdb->update($runs,$upd,['id'=>(int)$run['id']]);if($ru!==1)throw new Exception('RUN_PROGRESS_WRITE_FAILED_OR_NOOP');
+            $ru=Biawin_CRM_DB::write('update', $runs,$upd,['id'=>(int)$run['id']]);if($ru!==1)throw new Exception('RUN_PROGRESS_WRITE_FAILED_OR_NOOP');
             $run_check=$wpdb->get_row($wpdb->prepare("SELECT status,result_json FROM $runs WHERE id=%d",(int)$run['id']),ARRAY_A);$check_state=$run_check?json_decode((string)($run_check['result_json']??''),true):null;
             if(!$run_check||!is_array($check_state)||(int)($check_state['next_index']??-1)!==(int)$state['next_index']||(int)($check_state['chunks_committed']??-1)!==(int)$state['chunks_committed']||(int)($check_state['records_moved']??-1)!==(int)$state['records_moved']||(int)($check_state['skipped']??-1)!==(int)$state['skipped'])throw new Exception('RUN_PROGRESS_READBACK_FAILED');
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             $action='Controlled Job 988 — Chunk '.$chunk_no.' committed'.($quarantined?' with '.count($quarantined).' quarantined profile(s)':'');
             return ['ok'=>true,'action'=>$action,'run_id'=>(int)$run['id'],'run_uuid'=>$run['run_uuid'],'counts'=>$state,'job_complete'=>$done,'quarantined'=>$quarantined];
         }catch(Throwable $e){
-            $wpdb->query('ROLLBACK');$state['last_chunk']=['chunk'=>$chunk_no,'status'=>'failed','error'=>$e->getMessage()];
-            $wpdb->update($runs,['status'=>'paused_safety_block','result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)],['id'=>(int)$run['id']]);
+            Biawin_CRM_DB::write('query', 'ROLLBACK');$state['last_chunk']=['chunk'=>$chunk_no,'status'=>'failed','error'=>$e->getMessage()];
+            Biawin_CRM_DB::write('update', $runs,['status'=>'paused_safety_block','result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)],['id'=>(int)$run['id']]);
             return ['ok'=>false,'error'=>'Chunk '.$chunk_no.' rollback شد؛ Chunkهای قبلی Commit‌شده باقی ماندند. دلیل: '.$e->getMessage(),'run_id'=>(int)$run['id'],'counts'=>$state];
         }
     }
@@ -684,7 +684,7 @@ class Biawin_CRM_Controlled_Reconstruction
 
     private static function journal(int $run_id,string $logical,int $record_id,array $before,array $after): void
     {
-        global $wpdb;$wpdb->insert(self::journal_table(),['run_id'=>$run_id,'table_name'=>$logical,'record_id'=>$record_id,'before_customer_id'=>(int)($before['customer_id']??($before['id']??0)),'after_customer_id'=>(int)($after['customer_id']??($after['id']??0)),'before_json'=>wp_json_encode($before,JSON_UNESCAPED_UNICODE),'after_json'=>wp_json_encode($after,JSON_UNESCAPED_UNICODE),'before_hash'=>self::row_hash($before),'after_hash'=>self::row_hash($after),'status'=>'applied','created_at'=>current_time('mysql')]);if(!$wpdb->insert_id)throw new Exception('JOURNAL_WRITE_FAILED_'.$logical.'_'.$record_id);
+        global $wpdb;Biawin_CRM_DB::write('insert', self::journal_table(),['run_id'=>$run_id,'table_name'=>$logical,'record_id'=>$record_id,'before_customer_id'=>(int)($before['customer_id']??($before['id']??0)),'after_customer_id'=>(int)($after['customer_id']??($after['id']??0)),'before_json'=>wp_json_encode($before,JSON_UNESCAPED_UNICODE),'after_json'=>wp_json_encode($after,JSON_UNESCAPED_UNICODE),'before_hash'=>self::row_hash($before),'after_hash'=>self::row_hash($after),'status'=>'applied','created_at'=>current_time('mysql')]);if(!$wpdb->insert_id)throw new Exception('JOURNAL_WRITE_FAILED_'.$logical.'_'.$record_id);
     }
 
     private static function ensure_journal_tables(): void

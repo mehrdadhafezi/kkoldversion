@@ -238,7 +238,7 @@ class Biawin_CRM_Refund_Register
             }
             $is_replacement = (bool)$existing;
 
-            $inserted = $wpdb->insert($registers, [
+            $inserted = Biawin_CRM_DB::write('insert', $registers, [
                 'customer_id' => $customer_id,
                 'invoice_code' => $invoice_code,
                 'refund_status' => 1,
@@ -353,7 +353,7 @@ class Biawin_CRM_Refund_Register
         $tags = Biawin_CRM_DB::table('customer_tags');
         $now = Biawin_CRM_DB::now();
         $actor = $actor_user_id ?: get_current_user_id();
-        $wpdb->query($wpdb->prepare(
+        Biawin_CRM_DB::write('query', $wpdb->prepare(
             "INSERT INTO $tags (customer_id,tag,case_id,created_by,created_at) VALUES (%d,%s,0,%d,%s) ON DUPLICATE KEY UPDATE created_by=VALUES(created_by)",
             $customer_id, self::TAG_CONFIRMED, $actor, $now
         ));
@@ -368,7 +368,7 @@ class Biawin_CRM_Refund_Register
         $tags = Biawin_CRM_DB::table('customer_tags');
         $now = Biawin_CRM_DB::now();
         $actor = $actor_user_id ?: get_current_user_id();
-        $wpdb->query($wpdb->prepare(
+        Biawin_CRM_DB::write('query', $wpdb->prepare(
             "INSERT INTO $tags (customer_id,tag,case_id,created_by,created_at) VALUES (%d,%s,0,%d,%s) ON DUPLICATE KEY UPDATE created_by=VALUES(created_by)",
             $customer_id, self::TAG_REPORTED, $actor, $now
         ));
@@ -380,7 +380,7 @@ class Biawin_CRM_Refund_Register
             ));
             if ($existing) return;
         }
-        $wpdb->insert(Biawin_CRM_DB::table('refund_registers'), [
+        Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('refund_registers'), [
             'customer_id' => $customer_id,
             'invoice_code' => '',
             'refund_status' => 1,
@@ -413,7 +413,7 @@ class Biawin_CRM_Refund_Register
         $deleted = 0;
         $affected_customers = [];
         foreach ($targets as $t) {
-            $ok = $wpdb->delete($registers, ['id' => (int)$t->id], ['%d']);
+            $ok = Biawin_CRM_DB::write('delete', $registers, ['id' => (int)$t->id], ['%d']);
             if ($ok) {
                 $deleted++;
                 $affected_customers[(int)$t->customer_id] = (string)$t->batch_code;
@@ -429,7 +429,7 @@ class Biawin_CRM_Refund_Register
         foreach (array_keys($affected_customers) as $cid) {
             $remaining = (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $registers WHERE customer_id=%d AND source_type='excel'", $cid));
             if ($remaining === 0) {
-                $tags_removed += (int)$wpdb->query($wpdb->prepare("DELETE FROM $tags WHERE customer_id=%d AND tag=%s", $cid, self::TAG_CONFIRMED));
+                $tags_removed += (int)Biawin_CRM_DB::write('query', $wpdb->prepare("DELETE FROM $tags WHERE customer_id=%d AND tag=%s", $cid, self::TAG_CONFIRMED));
             }
         }
         if ($deleted > 0) {

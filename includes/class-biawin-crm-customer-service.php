@@ -9,6 +9,7 @@ class Biawin_CRM_Customer_Service
     public static function ensure_customer_code(int $customer_id): string
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $table = Biawin_CRM_DB::table('customers');
         for ($attempt = 0; $attempt < 6; $attempt++) {
             $existing = $wpdb->get_var($wpdb->prepare("SELECT customer_code FROM $table WHERE id = %d", $customer_id));
@@ -16,7 +17,7 @@ class Biawin_CRM_Customer_Service
 
             $max_code = (int) $wpdb->get_var("SELECT MAX(CAST(customer_code AS UNSIGNED)) FROM $table WHERE customer_code REGEXP '^[0-9]+$'");
             $code = (string) max(1000, $max_code + 1);
-            $updated = $wpdb->update($table, ['customer_code' => $code, 'status' => 'verified', 'updated_at' => Biawin_CRM_DB::now()], ['id' => $customer_id]);
+            $updated = Biawin_CRM_DB::write('update', $table, ['customer_code' => $code, 'status' => 'verified', 'updated_at' => Biawin_CRM_DB::now()], ['id' => $customer_id]);
             if ($updated !== false) {
                 Biawin_CRM_DB::log('customer', $customer_id, 'customer_code_generated', null, ['customer_code' => $code]);
                 return $code;
@@ -30,6 +31,7 @@ class Biawin_CRM_Customer_Service
     public static function recalculate_customer(int $customer_id): bool
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $total = (float) $wpdb->get_var($wpdb->prepare(
             "SELECT COALESCE(SUM(CASE WHEN COALESCE(exclude_from_total,0)=1 THEN 0 ELSE amount_paid END), 0) FROM " . Biawin_CRM_DB::table('invoices') . " WHERE customer_id = %d",
             $customer_id
@@ -51,7 +53,7 @@ class Biawin_CRM_Customer_Service
         $discrepancy = $declared_value === null ? 0 : $declared_value - $total;
         $grade = self::grade($customer_id, $total, $avg === null ? null : (float) $avg, $open_complaints, $discrepancy);
 
-        $updated = $wpdb->update(Biawin_CRM_DB::table('customers'), [
+        $updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'), [
             'total_paid' => $total,
             'declared_paid' => $declared_value,
             'discrepancy_amount' => $discrepancy,
@@ -72,20 +74,23 @@ class Biawin_CRM_Customer_Service
     public static function ensure_single_primary_phone(int $customer_id): void
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $table = Biawin_CRM_DB::table('phones');
         $primary_ids = $wpdb->get_col($wpdb->prepare("SELECT id FROM $table WHERE customer_id=%d AND is_primary=1 ORDER BY id ASC", $customer_id));
         if (count($primary_ids) > 1) {
             $keep = (int)$primary_ids[0];
-            $wpdb->query($wpdb->prepare("UPDATE $table SET is_primary=0 WHERE customer_id=%d AND id<>%d", $customer_id, $keep));
+            Biawin_CRM_DB::write('query', $wpdb->prepare("UPDATE $table SET is_primary=0 WHERE customer_id=%d AND id<>%d", $customer_id, $keep));
         } elseif (!$primary_ids) {
             $first = (int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE customer_id=%d ORDER BY id ASC LIMIT 1", $customer_id));
-            if ($first) $wpdb->update($table, ['is_primary'=>1], ['id'=>$first]);
+            if ($first) Biawin_CRM_DB::write('update', $table, ['is_primary'=>1], ['id'=>$first]);
         }
     }
 
     public static function collapse_empty_profile(int $source_customer_id, int $target_customer_id, string $reason = ''): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($target_customer_id);
+        Biawin_CRM_DB::assert_customer_mutable($source_customer_id);
         if (!$source_customer_id || !$target_customer_id || $source_customer_id === $target_customer_id) {
             return ['deleted'=>false];
         }
@@ -107,12 +112,12 @@ class Biawin_CRM_Customer_Service
             return ['deleted'=>false,'reason'=>'source_has_remaining_phones','remaining_phone_count'=>$remaining_phone_count];
         }
 
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             $simple_tables = ['interactions','complaints','financial_cases','refunds','service_cases','activities','attachments','services'];
             foreach ($simple_tables as $name) {
                 $table = Biawin_CRM_DB::table($name);
-                $updated = $wpdb->update($table, ['customer_id'=>$target_customer_id], ['customer_id'=>$source_customer_id]);
+                $updated = Biawin_CRM_DB::write('update', $table, ['customer_id'=>$target_customer_id], ['customer_id'=>$source_customer_id]);
                 if ($updated === false) throw new RuntimeException('merge '.$name.' failed');
             }
 
@@ -124,7 +129,7 @@ class Biawin_CRM_Customer_Service
                 "SELECT DISTINCT agent_user_id FROM $assignments WHERE customer_id=%d AND status='assigned'",
                 $source_customer_id
             )));
-            $closed_assignments = $wpdb->query($wpdb->prepare(
+            $closed_assignments = Biawin_CRM_DB::write('query', $wpdb->prepare(
                 "UPDATE $assignments SET status='merged_closed', completed_at=%s WHERE customer_id=%d AND status='assigned'",
                 Biawin_CRM_DB::now(), $source_customer_id
             ));
@@ -132,10 +137,10 @@ class Biawin_CRM_Customer_Service
             self::ensure_single_primary_phone($target_customer_id);
 
             $source = $wpdb->get_row($wpdb->prepare('SELECT * FROM '.Biawin_CRM_DB::table('customers').' WHERE id=%d', $source_customer_id));
-            $deleted = $wpdb->delete(Biawin_CRM_DB::table('customers'), ['id'=>$source_customer_id]);
+            $deleted = Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('customers'), ['id'=>$source_customer_id]);
             if ($deleted === false) throw new RuntimeException('customer delete failed');
 
-            $wpdb->insert(Biawin_CRM_DB::table('merge_events'), [
+            Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('merge_events'), [
                 'primary_customer_id'=>$target_customer_id,
                 'merged_customer_ids'=>wp_json_encode([$source_customer_id]),
                 'merge_type'=>'manual',
@@ -157,11 +162,11 @@ class Biawin_CRM_Customer_Service
                     ['source_customer_id'=>$source_customer_id,'closed_agent_user_ids'=>$source_active_agents]
                 );
             }
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             self::recalculate_customer($target_customer_id);
             return ['deleted'=>true,'deleted_customer_id'=>$source_customer_id,'profile_count'=>(int)$wpdb->get_var('SELECT COUNT(*) FROM '.Biawin_CRM_DB::table('customers'))];
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['deleted'=>false,'error'=>$e->getMessage()];
         }
     }
@@ -169,6 +174,7 @@ class Biawin_CRM_Customer_Service
     public static function set_phone_verification(int $customer_id, int $phone_id, string $status, bool $make_primary = false): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $allowed = ['unverified','verified','verified_primary','wrong','other_person','blocked'];
         $phone = $wpdb->get_row($wpdb->prepare('SELECT * FROM '.Biawin_CRM_DB::table('phones').' WHERE id=%d AND customer_id=%d', $phone_id, $customer_id));
         if (!$phone) return ['ok'=>false,'message'=>'شماره در این پروفایل پیدا نشد.'];
@@ -176,7 +182,7 @@ class Biawin_CRM_Customer_Service
         if ($status === '') $status = (string)($phone->phone_status ?: 'unverified');
         if (!in_array($status, $allowed, true)) return ['ok'=>false,'message'=>'وضعیت شماره معتبر نیست.'];
         if ($make_primary) {
-            $cleared = $wpdb->update(Biawin_CRM_DB::table('phones'), ['is_primary'=>0], ['customer_id'=>$customer_id]);
+            $cleared = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('phones'), ['is_primary'=>0], ['customer_id'=>$customer_id]);
             if ($cleared === false) return ['ok'=>false,'message'=>'تغییر شماره اصلی در دیتابیس انجام نشد.'];
         }
         $data = [
@@ -185,7 +191,7 @@ class Biawin_CRM_Customer_Service
             'auto_match_blocked'=>in_array($status,['wrong','other_person','blocked'],true)?1:0,
         ];
         if ($make_primary) $data['is_primary']=1;
-        $ok=$wpdb->update(Biawin_CRM_DB::table('phones'),$data,['id'=>$phone_id]);
+        $ok=Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('phones'),$data,['id'=>$phone_id]);
         if ($ok===false) return ['ok'=>false,'message'=>'وضعیت شماره ذخیره نشد.'];
         self::ensure_single_primary_phone($customer_id);
         Biawin_CRM_DB::log('customer',$customer_id,'phone_verification_changed',null,['phone_id'=>$phone_id,'status'=>$status,'primary'=>$make_primary]);
@@ -271,6 +277,7 @@ class Biawin_CRM_Customer_Service
     public static function attach_invoice(int $target_customer_id, string $invoice_code, string $reason, bool $collapse_source = true, bool $allow_coded_merge = false): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($target_customer_id);
         $invoice = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM " . Biawin_CRM_DB::table('invoices') . " WHERE invoice_code = %s",
             $invoice_code
@@ -291,11 +298,11 @@ class Biawin_CRM_Customer_Service
         }
 
         $before = ['invoice_id' => (int) $invoice->id, 'from_customer_id' => $source_customer_id, 'to_customer_id' => $target_customer_id];
-        $updated_invoice = $wpdb->update(Biawin_CRM_DB::table('invoices'), ['customer_id' => $target_customer_id, 'updated_at' => Biawin_CRM_DB::now()], ['id' => (int) $invoice->id]);
+        $updated_invoice = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('invoices'), ['customer_id' => $target_customer_id, 'updated_at' => Biawin_CRM_DB::now()], ['id' => (int) $invoice->id]);
         if ($updated_invoice === false) {
             return ['ok'=>false,'message'=>'اتصال فاکتور در دیتابیس انجام نشد.'];
         }
-        $updated_services = $wpdb->update(Biawin_CRM_DB::table('services'), ['customer_id' => $target_customer_id], ['invoice_id' => (int) $invoice->id]);
+        $updated_services = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('services'), ['customer_id' => $target_customer_id], ['invoice_id' => (int) $invoice->id]);
         if ($updated_services === false) {
             return ['ok'=>false,'message'=>'اتصال خدمات فاکتور به پروفایل انجام نشد.'];
         }
@@ -308,7 +315,7 @@ class Biawin_CRM_Customer_Service
             }
         }
 
-        $wpdb->insert(Biawin_CRM_DB::table('merge_events'), [
+        Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('merge_events'), [
             'primary_customer_id' => $target_customer_id,
             'merged_customer_ids' => wp_json_encode(array_filter([$source_customer_id]), JSON_UNESCAPED_UNICODE),
             'merge_type' => 'manual',
@@ -328,6 +335,7 @@ class Biawin_CRM_Customer_Service
     public static function attach_invoice_and_phones(int $target_customer_id, string $invoice_code, array $extra_phones = [], string $reason = 'اتصال شماره و فاکتور توسط کارشناس'): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($target_customer_id);
         $invoice = $wpdb->get_row($wpdb->prepare("SELECT * FROM " . Biawin_CRM_DB::table('invoices') . " WHERE invoice_code=%s", trim($invoice_code)));
         if (!$invoice) {
             return ['ok' => false, 'message' => 'فاکتور پیدا نشد.'];
@@ -374,24 +382,24 @@ class Biawin_CRM_Customer_Service
             }
         }
 
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             $res = self::attach_invoice($target_customer_id, $invoice_code, $reason, false, $has_invoice_phone_bridge);
             if (empty($res['ok'])) {
-                $wpdb->query('ROLLBACK');
+                Biawin_CRM_DB::write('query', 'ROLLBACK');
                 return $res;
             }
             foreach ($phones_to_attach as $idx => $phone) {
                 $existing = $wpdb->get_row($wpdb->prepare("SELECT * FROM " . Biawin_CRM_DB::table('phones') . " WHERE normalized_phone=%s", $phone));
                 if ($existing) {
-                    $phone_updated = $wpdb->update(Biawin_CRM_DB::table('phones'), [
+                    $phone_updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('phones'), [
                         'customer_id' => $target_customer_id,
                         'source' => 'invoice_attach_explicit',
                         'is_primary' => $idx === 0 ? 1 : (int)$existing->is_primary,
                     ], ['id' => (int)$existing->id]);
                     if ($phone_updated === false) throw new RuntimeException('phone update failed');
                 } else {
-                    $phone_inserted = $wpdb->insert(Biawin_CRM_DB::table('phones'), [
+                    $phone_inserted = Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('phones'), [
                         'customer_id' => $target_customer_id,
                         'raw_phone' => $phone,
                         'normalized_phone' => $phone,
@@ -428,7 +436,7 @@ class Biawin_CRM_Customer_Service
                     $log_after
                 );
             }
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             $collapse = ['deleted'=>false];
             if ($source_customer_id && $source_customer_id !== $target_customer_id) {
                 $collapse = self::collapse_empty_profile($source_customer_id, $target_customer_id, $reason);
@@ -442,7 +450,7 @@ class Biawin_CRM_Customer_Service
                 'profile_count'=>$collapse['profile_count']??null,
             ];
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>'اتصال شماره و فاکتور انجام نشد.' . (current_user_can('manage_options') && ($wpdb->last_error || $e->getMessage()) ? ' DB: ' . ($wpdb->last_error ?: $e->getMessage()) : '')];
         }
     }
@@ -450,6 +458,7 @@ class Biawin_CRM_Customer_Service
     public static function create_manual_invoice_with_phone(int $customer_id, string $phone, string $invoice_code, float $amount, string $payment_info = '', string $name = ''): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $normalized = Biawin_CRM_Normalizer::phone($phone);
         $invoice_code = trim($invoice_code);
         if ($normalized === '') return ['ok'=>false,'message'=>'شماره موبایل معتبر (با فرمت 09xxxxxxxxx) الزامی است.'];
@@ -483,11 +492,11 @@ class Biawin_CRM_Customer_Service
             return ['ok'=>false,'message'=>'این شماره از قبل روی پروفایل دیگری است. ثبت فاکتور دستی نباید مالک شماره را خودکار تغییر دهد؛ ابتدا اتصال هویت را از مسیر جست‌وجو/اتصال بررسی کنید.'];
         }
 
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             $now = Biawin_CRM_DB::now();
             $invoice_table = Biawin_CRM_DB::table('invoices');
-            $ok = $wpdb->insert($invoice_table, [
+            $ok = Biawin_CRM_DB::write('insert', $invoice_table, [
                 'customer_id' => $customer_id,
                 'invoice_code' => sanitize_text_field($invoice_code),
                 'invoice_name' => sanitize_text_field($name),
@@ -502,7 +511,7 @@ class Biawin_CRM_Customer_Service
             if (!$ok || !$wpdb->insert_id) throw new RuntimeException('invoice insert failed');
             $invoice_id = (int)$wpdb->insert_id;
 
-            if (!$wpdb->insert(Biawin_CRM_DB::table('payments'), [
+            if (!Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('payments'), [
                 'invoice_id' => $invoice_id,
                 'amount' => $amount,
                 'payment_info' => sanitize_textarea_field($payment_info),
@@ -511,14 +520,14 @@ class Biawin_CRM_Customer_Service
             ])) throw new RuntimeException('payment insert failed');
 
             if ($phone_owner) {
-                $phone_updated = $wpdb->update(Biawin_CRM_DB::table('phones'), [
+                $phone_updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('phones'), [
                     'customer_id' => $customer_id,
                     'source' => 'manual_invoice_bundle',
                     'is_primary' => (int)$phone_owner->is_primary ?: 1,
                 ], ['id' => (int)$phone_owner->id]);
                 if ($phone_updated === false) throw new RuntimeException('phone update failed');
             } else {
-                if (!$wpdb->insert(Biawin_CRM_DB::table('phones'), [
+                if (!Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('phones'), [
                     'customer_id' => $customer_id,
                     'raw_phone' => $phone,
                     'normalized_phone' => $normalized,
@@ -535,7 +544,7 @@ class Biawin_CRM_Customer_Service
                 'INSERT INTO ' . Biawin_CRM_DB::table('invoice_phones') . ' (invoice_id,normalized_phone,phone_position,created_at) VALUES (%d,%s,1,%s)',
                 $invoice_id, $normalized, $now
             );
-            if ($wpdb->query($invoice_phone_sql) === false) throw new RuntimeException('invoice phone insert failed');
+            if (Biawin_CRM_DB::write('query', $invoice_phone_sql) === false) throw new RuntimeException('invoice phone insert failed');
 
             self::recalculate_customer($customer_id);
             self::ensure_customer_code($customer_id);
@@ -545,10 +554,10 @@ class Biawin_CRM_Customer_Service
             if (class_exists('Biawin_CRM_Workflow_Service')) {
                 Biawin_CRM_Workflow_Service::activity($customer_id, 'manual_invoice_phone_bundle_created', 'شماره و فاکتور تکمیلی به‌صورت هم‌زمان ثبت شدند.', 'invoice', $invoice_id, ['invoice_code'=>$invoice_code,'phone'=>$normalized,'amount'=>$amount]);
             }
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             return ['ok'=>true,'message'=>'شماره و فاکتور ثبت شدند و پروفایل دوباره محاسبه شد.','invoice_id'=>$invoice_id,'phones'=>[$normalized]];
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>'ثبت هم‌زمان شماره و فاکتور انجام نشد؛ هیچ داده ناقصی ذخیره نشد.' . (current_user_can('manage_options') && $wpdb->last_error ? ' DB: ' . $wpdb->last_error : '')];
         }
     }
@@ -556,6 +565,7 @@ class Biawin_CRM_Customer_Service
     public static function add_phone(int $customer_id, string $raw_phone, string $status, string $relation): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $phone = Biawin_CRM_Normalizer::phone($raw_phone);
         if ($phone === '') {
             return ['ok' => false, 'message' => 'شماره معتبر نیست.'];
@@ -564,7 +574,7 @@ class Biawin_CRM_Customer_Service
         if ($existing && (int) $existing->customer_id !== $customer_id) {
             return ['ok' => false, 'message' => 'این شماره از قبل روی پروفایل دیگری ثبت شده است. برای جلوگیری از ادغام اشتباه، شماره از این فرم جابه‌جا نمی‌شود؛ از مسیر «جست‌وجو و اتصال شماره/فاکتور» و تأیید صریح استفاده کنید.'];
         }
-        $saved = $wpdb->query($wpdb->prepare(
+        $saved = Biawin_CRM_DB::write('query', $wpdb->prepare(
             "INSERT INTO " . Biawin_CRM_DB::table('phones') . " (customer_id, raw_phone, normalized_phone, phone_status, relation_type, source, is_primary, auto_match_blocked, verified_at, created_at)
              VALUES (%d, %s, %s, %s, %s, 'agent', 0, %d, %s, %s)
              ON DUPLICATE KEY UPDATE phone_status = VALUES(phone_status), relation_type = VALUES(relation_type), auto_match_blocked = VALUES(auto_match_blocked)",
@@ -586,6 +596,7 @@ class Biawin_CRM_Customer_Service
     public static function add_phone_to_invoice(int $customer_id, int $invoice_id, string $raw_phone): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $invoice_table = Biawin_CRM_DB::table('invoices');
         $invoice_phones = Biawin_CRM_DB::table('invoice_phones');
         $phones = Biawin_CRM_DB::table('phones');
@@ -603,10 +614,10 @@ class Biawin_CRM_Customer_Service
             return ['ok'=>true,'message'=>'این شماره از قبل روی فاکتور ثبت شده است.','phone'=>$normalized,'invoice_id'=>$invoice_id,'invoice_code'=>(string)$invoice->invoice_code,'phones'=>$before];
         }
 
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             $position = 1 + (int)$wpdb->get_var($wpdb->prepare("SELECT COALESCE(MAX(phone_position),0) FROM $invoice_phones WHERE invoice_id=%d", $invoice_id));
-            if ($wpdb->insert($invoice_phones, [
+            if (Biawin_CRM_DB::write('insert', $invoice_phones, [
                 'invoice_id'=>$invoice_id,
                 'normalized_phone'=>$normalized,
                 'phone_position'=>$position,
@@ -614,13 +625,13 @@ class Biawin_CRM_Customer_Service
             ]) === false) throw new RuntimeException('invoice phone insert failed');
 
             if ($other_owner) {
-                $ok=$wpdb->update($phones,[
+                $ok=Biawin_CRM_DB::write('update', $phones,[
                     'raw_phone'=>$raw_phone,
                     'source'=>'manual_invoice_phone',
                 ],['id'=>(int)$other_owner->id,'customer_id'=>$customer_id]);
                 if($ok===false) throw new RuntimeException('phone update failed');
             } else {
-                if ($wpdb->insert($phones,[
+                if (Biawin_CRM_DB::write('insert', $phones,[
                     'customer_id'=>$customer_id,
                     'raw_phone'=>$raw_phone,
                     'normalized_phone'=>$normalized,
@@ -647,10 +658,10 @@ class Biawin_CRM_Customer_Service
             ];
             Biawin_CRM_DB::log('invoice',$invoice_id,'invoice_phone_added_by_agent',$before,$audit);
             if(class_exists('Biawin_CRM_Workflow_Service')) Biawin_CRM_Workflow_Service::activity($customer_id,'invoice_phone_added_by_agent','شماره تماس توسط کارشناس به فاکتور اضافه شد.','invoice',$invoice_id,$audit);
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             return ['ok'=>true,'message'=>'شماره با ثبت کامل سابقه به فاکتور اضافه شد.','phone'=>$normalized,'invoice_id'=>$invoice_id,'invoice_code'=>(string)$invoice->invoice_code,'phones'=>$after];
         } catch(Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>'ثبت شماره روی فاکتور انجام نشد؛ هیچ تغییر ناقصی نگه داشته نشد.'];
         }
     }
@@ -658,6 +669,7 @@ class Biawin_CRM_Customer_Service
     public static function update_manual_phone(int $customer_id, int $phone_id, string $raw_phone): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $table = Biawin_CRM_DB::table('phones');
         $phone = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id=%d AND customer_id=%d", $phone_id, $customer_id));
         if (!$phone) return ['ok'=>false,'message'=>'شماره در این پروفایل پیدا نشد.'];
@@ -669,13 +681,13 @@ class Biawin_CRM_Customer_Service
         $duplicate = (int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE normalized_phone=%s AND id<>%d LIMIT 1", $normalized, $phone_id));
         if ($duplicate) return ['ok'=>false,'message'=>'این شماره از قبل در CRM وجود دارد. برای اتصال آن از جست‌وجوی شماره و فاکتور استفاده کنید.'];
         $before = ['phone_id'=>$phone_id,'raw_phone'=>$phone->raw_phone,'normalized_phone'=>$phone->normalized_phone,'source'=>$phone->source];
-        $ok = $wpdb->update($table, ['raw_phone'=>$raw_phone,'normalized_phone'=>$normalized], ['id'=>$phone_id,'customer_id'=>$customer_id]);
+        $ok = Biawin_CRM_DB::write('update', $table, ['raw_phone'=>$raw_phone,'normalized_phone'=>$normalized], ['id'=>$phone_id,'customer_id'=>$customer_id]);
         if ($ok === false) return ['ok'=>false,'message'=>'ویرایش شماره در دیتابیس انجام نشد.'];
         // Keep invoice-phone linkage in sync only for a manually-created bundle that explicitly carried this phone.
         if ((string)$phone->source === 'manual_invoice_bundle' && $phone->normalized_phone !== $normalized) {
             $invoice_phones = Biawin_CRM_DB::table('invoice_phones');
             $invoices = Biawin_CRM_DB::table('invoices');
-            $sync = $wpdb->query($wpdb->prepare(
+            $sync = Biawin_CRM_DB::write('query', $wpdb->prepare(
                 "UPDATE $invoice_phones ip INNER JOIN $invoices i ON i.id=ip.invoice_id
                  SET ip.normalized_phone=%s
                  WHERE ip.normalized_phone=%s AND i.customer_id=%d AND i.source_import_id IS NULL",
@@ -693,13 +705,14 @@ class Biawin_CRM_Customer_Service
     public static function detach_phone_to_new_customer(int $customer_id, int $phone_id): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         if ($customer_id <= 0 || $phone_id <= 0) return ['ok'=>false,'message'=>'شناسه پروفایل یا شماره معتبر نیست.'];
 
         $phones = Biawin_CRM_DB::table('phones');
         $customers = Biawin_CRM_DB::table('customers');
         $now = Biawin_CRM_DB::now();
 
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             $old_customer = $wpdb->get_row($wpdb->prepare("SELECT * FROM $customers WHERE id=%d FOR UPDATE", $customer_id));
             if (!$old_customer) throw new RuntimeException('پروفایل فعلی پیدا نشد.');
@@ -714,7 +727,7 @@ class Biawin_CRM_Customer_Service
             ));
             if ($duplicate > 0) throw new RuntimeException('این شماره قبلاً در رکورد دیگری وجود دارد و قابل جدا کردن نیست.');
 
-            $inserted = $wpdb->insert($customers, [
+            $inserted = Biawin_CRM_DB::write('insert', $customers, [
                 'internal_uuid' => wp_generate_uuid4(),
                 'display_name' => null,
                 'normalized_name' => null,
@@ -726,7 +739,7 @@ class Biawin_CRM_Customer_Service
             if (!$inserted || !$wpdb->insert_id) throw new RuntimeException('ساخت پروفایل مستقل برای شماره انجام نشد.');
             $new_customer_id = (int)$wpdb->insert_id;
 
-            $updated_phone = $wpdb->update($phones, [
+            $updated_phone = Biawin_CRM_DB::write('update', $phones, [
                 'customer_id' => $new_customer_id,
                 'is_primary' => 1,
                 'source' => 'detached',
@@ -734,9 +747,9 @@ class Biawin_CRM_Customer_Service
             ], ['id'=>$phone_id, 'customer_id'=>$customer_id]);
             if ($updated_phone === false) throw new RuntimeException('انتقال شماره به پروفایل جدید ذخیره نشد.');
 
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>$e->getMessage() ?: 'جدا کردن شماره انجام نشد.'];
         }
 
@@ -764,6 +777,7 @@ class Biawin_CRM_Customer_Service
     public static function update_manual_invoice(int $customer_id, int $invoice_id, string $invoice_code, float $amount, string $payment_info = '', string $name = ''): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $invoices = Biawin_CRM_DB::table('invoices');
         $invoice = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$invoices} WHERE id=%d AND customer_id=%d", $invoice_id, $customer_id));
         if (!$invoice) return ['ok'=>false,'message'=>'فاکتور در این پروفایل پیدا نشد.'];
@@ -774,9 +788,9 @@ class Biawin_CRM_Customer_Service
         $dup=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$invoices} WHERE invoice_code=%s AND id<>%d LIMIT 1",$invoice_code,$invoice_id));
         if($dup) return ['ok'=>false,'message'=>'این کد فاکتور از قبل وجود دارد.'];
         $before=['invoice_id'=>$invoice_id,'invoice_code'=>$invoice->invoice_code,'amount_paid'=>$invoice->amount_paid,'payment_info'=>$invoice->payment_info,'invoice_name'=>$invoice->invoice_name];
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
-            $ok=$wpdb->update($invoices,[
+            $ok=Biawin_CRM_DB::write('update', $invoices,[
                 'invoice_code'=>sanitize_text_field($invoice_code),
                 'invoice_name'=>sanitize_text_field($name),
                 'amount_paid'=>$amount,
@@ -787,13 +801,13 @@ class Biawin_CRM_Customer_Service
             $payments=Biawin_CRM_DB::table('payments');
             $payment_id=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$payments} WHERE invoice_id=%d ORDER BY id ASC LIMIT 1",$invoice_id));
             if($payment_id){
-                if($wpdb->update($payments,['amount'=>$amount,'payment_info'=>sanitize_textarea_field($payment_info)],['id'=>$payment_id])===false) throw new RuntimeException('payment update failed');
+                if(Biawin_CRM_DB::write('update', $payments,['amount'=>$amount,'payment_info'=>sanitize_textarea_field($payment_info)],['id'=>$payment_id])===false) throw new RuntimeException('payment update failed');
             } else {
-                if(!$wpdb->insert($payments,['invoice_id'=>$invoice_id,'amount'=>$amount,'payment_info'=>sanitize_textarea_field($payment_info),'source_import_id'=>null,'created_at'=>Biawin_CRM_DB::now()])) throw new RuntimeException('payment insert failed');
+                if(!Biawin_CRM_DB::write('insert', $payments,['invoice_id'=>$invoice_id,'amount'=>$amount,'payment_info'=>sanitize_textarea_field($payment_info),'source_import_id'=>null,'created_at'=>Biawin_CRM_DB::now()])) throw new RuntimeException('payment insert failed');
             }
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
         } catch(Throwable $e){
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>'ویرایش فاکتور ذخیره نشد.'];
         }
         self::recalculate_customer($customer_id);
@@ -805,6 +819,7 @@ class Biawin_CRM_Customer_Service
     public static function create_manual_invoice(int $customer_id, string $invoice_code, float $amount, string $payment_info = '', string $name = ''): array
     {
         global $wpdb;
+        Biawin_CRM_DB::assert_customer_mutable($customer_id);
         $invoice_code = trim($invoice_code);
         if ($invoice_code === '' || $amount <= 0) {
             return ['ok' => false, 'message' => 'کد فاکتور و مبلغ معتبر الزامی است.'];
@@ -818,7 +833,7 @@ class Biawin_CRM_Customer_Service
             return self::attach_invoice($customer_id, $invoice_code, 'اتصال فاکتور در فرآیند تکمیل مالی');
         }
         $now = Biawin_CRM_DB::now();
-        $wpdb->insert($table, [
+        Biawin_CRM_DB::write('insert', $table, [
             'customer_id' => $customer_id,
             'invoice_code' => sanitize_text_field($invoice_code),
             'invoice_name' => sanitize_text_field($name),
@@ -834,7 +849,7 @@ class Biawin_CRM_Customer_Service
         if (!$invoice_id) {
             return ['ok' => false, 'message' => 'ثبت فاکتور تکمیلی انجام نشد.'];
         }
-        $wpdb->insert(Biawin_CRM_DB::table('payments'), [
+        Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('payments'), [
             'invoice_id' => $invoice_id,
             'amount' => $amount,
             'payment_info' => sanitize_textarea_field($payment_info),

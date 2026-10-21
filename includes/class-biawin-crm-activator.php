@@ -30,6 +30,7 @@ class Biawin_CRM_Activator
         '0.8.63.0' => 'migrate_0863_0',
         '0.8.64.0' => 'migrate_0864_0',
         '0.8.65.18' => 'migrate_0865_18',
+        '0.8.65.19' => 'migrate_0865_19',
     ];
 
     /**
@@ -81,7 +82,7 @@ class Biawin_CRM_Activator
             if (version_compare($db_version, BIAWIN_CRM_VERSION, '>=')) return;
             $pending = [];
             foreach (array_keys(self::MIGRATIONS) as $migration_version) {
-                if (version_compare($db_version, $migration_version, '<')) {
+                if (version_compare($migration_version, BIAWIN_CRM_VERSION, '<=') && version_compare($db_version, $migration_version, '<')) {
                     $pending[$migration_version] = self::MIGRATIONS[$migration_version];
                 }
             }
@@ -104,7 +105,7 @@ class Biawin_CRM_Activator
             try {
                 // C1 upgrades from the approved baseline must not replay activation's
                 // assignment repair / Deficiency backfill. The migration ensured its DDL.
-                if (!(BIAWIN_CRM_VERSION === '0.8.65.18' && version_compare($db_version, '0.8.65.17', '>='))) {
+                if (!(in_array(BIAWIN_CRM_VERSION, ['0.8.65.18','0.8.65.19'], true) && version_compare($db_version, '0.8.65.17', '>='))) {
                     self::activate();
                 }
             } catch (Throwable $e) {
@@ -146,6 +147,12 @@ class Biawin_CRM_Activator
     {
         // Schema is ensured by self::activate() right after migrations; nothing destructive here.
         return;
+    }
+
+    /** C2 durable submit/execution/recovery metadata only. */
+    private static function migrate_0865_19(): void
+    {
+        Biawin_CRM_Ownership_Schema::ensure();
     }
 
     /** C1 foundation only; deliberately no legacy data scan or backfill. */
@@ -1330,7 +1337,7 @@ class Biawin_CRM_Activator
                 $placeholders = implode(',', array_fill(0, count($close_ids), '%d'));
                 $args = array_merge([Biawin_CRM_DB::now()], $close_ids);
                 $sql = "UPDATE $assignments SET status='duplicate_closed', completed_at=%s WHERE id IN ($placeholders) AND status='assigned'";
-                $ok = $wpdb->query($wpdb->prepare($sql, ...$args));
+                $ok = Biawin_CRM_DB::write('query', $wpdb->prepare($sql, ...$args));
                 if ($ok === false) { $wpdb->query('ROLLBACK'); continue; }
             }
             $wpdb->query('COMMIT');

@@ -48,7 +48,7 @@ class Biawin_CRM_Finance_Review
         $table = self::table();
         $charset = method_exists($wpdb, 'get_charset_collate') ? $wpdb->get_charset_collate() : '';
         $wpdb->last_error = '';
-        $wpdb->query("CREATE TABLE IF NOT EXISTS $table (
+        Biawin_CRM_DB::write('query', "CREATE TABLE IF NOT EXISTS $table (
             attachment_id BIGINT UNSIGNED NOT NULL,
             case_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
             review_status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -65,7 +65,7 @@ class Biawin_CRM_Finance_Review
         if ((string)$wpdb->last_error !== '') return false;
         $cols = (array)$wpdb->get_col("SHOW COLUMNS FROM $table", 0);
         foreach (['review_type'=>"VARCHAR(40) NULL AFTER review_status", 'reason_key'=>"VARCHAR(80) NULL AFTER review_type", 'details_json'=>"LONGTEXT NULL AFTER review_note"] as $col=>$ddl) {
-            if (!in_array($col, $cols, true)) { $wpdb->query("ALTER TABLE $table ADD COLUMN $col $ddl"); if ((string)$wpdb->last_error !== '') return false; }
+            if (!in_array($col, $cols, true)) { Biawin_CRM_DB::write('query', "ALTER TABLE $table ADD COLUMN $col $ddl"); if ((string)$wpdb->last_error !== '') return false; }
         }
         update_option(self::SCHEMA_OPTION, self::SCHEMA_VERSION, false);
         self::$table_ready = true;
@@ -300,12 +300,13 @@ class Biawin_CRM_Finance_Review
     /** Core per-receipt review (shared by AJAX and tests). */
     public static function review_receipt(object $case, int $attachment_id, string $decision, string $amount_raw = '', string $note = '', string $subtype = '', string $reason_key = '', array $details = []): array
     {
+        Biawin_CRM_DB::assert_customer_mutable((int)$case->customer_id);
         if (!self::can_review($case)) return ['ok'=>false,'message'=>in_array((string)$case->status,self::REVIEWABLE_STATUSES,true)?'دسترسی بررسی فیش ندارید.':'این پرونده در وضعیت بررسی مالی نیست؛ بررسی فیش فقط در صف مالی ممکن است.'];
         if (!in_array($decision,['approve','reject','refund','reset'],true)) return ['ok'=>false,'message'=>'اقدام نامعتبر است.'];
         if (!self::ensure_table()) return ['ok'=>false,'message'=>'جدول بررسی فیش‌ها در دیتابیس ساخته نشد.'];
         global $wpdb; $att=$wpdb->get_row($wpdb->prepare('SELECT * FROM '.Biawin_CRM_DB::table('attachments').' WHERE id=%d AND object_type=%s AND object_id=%d',$attachment_id,'deficiency_case',(int)$case->id)); if(!$att)return ['ok'=>false,'message'=>'این فیش متعلق به این پرونده نیست.'];
         $table=self::table(); $receipt_amount=null; if(preg_match('/مبلغ فیش:\s*([\d\x{06F0}-\x{06F9}]+(?:[.,،][\d\x{06F0}-\x{06F9}]+)*)/u',(string)$att->note,$m))$receipt_amount=Biawin_CRM_Normalizer::money($m[1]);
-        if($decision==='reset'){ $wpdb->delete($table,['attachment_id'=>$attachment_id]); Biawin_CRM_Deficiency_Workflow::action((int)$case->id,(int)$case->customer_id,'finance','RECEIPT_REVIEW_RESET',(string)$case->status,(string)$case->status,['attachment_id'=>$attachment_id]); return ['ok'=>true,'message'=>'فیش به حالت «بررسی‌نشده» برگشت.']; }
+        if($decision==='reset'){ Biawin_CRM_DB::write('delete', $table,['attachment_id'=>$attachment_id]); Biawin_CRM_Deficiency_Workflow::action((int)$case->id,(int)$case->customer_id,'finance','RECEIPT_REVIEW_RESET',(string)$case->status,(string)$case->status,['attachment_id'=>$attachment_id]); return ['ok'=>true,'message'=>'فیش به حالت «بررسی‌نشده» برگشت.']; }
         $status=$decision==='approve'?'approved':($decision==='refund'?'refunded':'rejected'); $amount=null; $reason_key=sanitize_key($reason_key); $subtype=sanitize_key($subtype); $safe_details=[];
         if($decision==='approve'){ $types=self::financial_option_map('approve_types'); if(!isset($types[$subtype]))return ['ok'=>false,'message'=>'نوع تأیید را انتخاب کنید.']; $amount=trim($amount_raw)!==''?Biawin_CRM_Normalizer::money($amount_raw):$receipt_amount; if($amount===null||$amount<=0)return ['ok'=>false,'message'=>'مبلغ این فیش معتبر نیست.']; if($subtype==='with_invoice'){
             $links=[]; $raw_links=$details['invoice_links']??[];
@@ -341,10 +342,10 @@ class Biawin_CRM_Finance_Review
                 $safe_details=['refund_links'=>$links,'invoice_number'=>$links[0]['invoice_number'],'customer_phone'=>$links[0]['customer_phone'],'invoice_amount'=>$links[0]['invoice_amount']];
             }
         }
-        $data=['case_id'=>(int)$case->id,'review_status'=>$status,'review_type'=>$subtype?:null,'reason_key'=>$reason_key?:null,'approved_amount'=>$amount,'review_note'=>$note,'details_json'=>$safe_details?wp_json_encode($safe_details):null,'reviewed_by'=>get_current_user_id()?:null,'reviewed_at'=>Biawin_CRM_DB::now()]; $exists=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table WHERE attachment_id=%d",$attachment_id)); $saved=$exists?$wpdb->update($table,$data,['attachment_id'=>$attachment_id]):$wpdb->insert($table,['attachment_id'=>$attachment_id]+$data); if($saved===false)return ['ok'=>false,'message'=>'ذخیره نتیجه بررسی فیش ناموفق بود.'];
+        $data=['case_id'=>(int)$case->id,'review_status'=>$status,'review_type'=>$subtype?:null,'reason_key'=>$reason_key?:null,'approved_amount'=>$amount,'review_note'=>$note,'details_json'=>$safe_details?wp_json_encode($safe_details):null,'reviewed_by'=>get_current_user_id()?:null,'reviewed_at'=>Biawin_CRM_DB::now()]; $exists=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table WHERE attachment_id=%d",$attachment_id)); $saved=$exists?Biawin_CRM_DB::write('update', $table,$data,['attachment_id'=>$attachment_id]):Biawin_CRM_DB::write('insert', $table,['attachment_id'=>$attachment_id]+$data); if($saved===false)return ['ok'=>false,'message'=>'ذخیره نتیجه بررسی فیش ناموفق بود.'];
         $from_status=(string)$case->status; $to_status=$from_status;
         if($from_status==='FINANCE_ASSIGNED'){
-            $moved=$wpdb->update(Biawin_CRM_DB::table('deficiency_cases'),['status'=>'FINANCE_UNDER_REVIEW','updated_at'=>Biawin_CRM_DB::now()],['id'=>(int)$case->id,'status'=>'FINANCE_ASSIGNED']);
+            $moved=Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('deficiency_cases'),['status'=>'FINANCE_UNDER_REVIEW','updated_at'=>Biawin_CRM_DB::now()],['id'=>(int)$case->id,'status'=>'FINANCE_ASSIGNED']);
             if($moved!==false){ $to_status='FINANCE_UNDER_REVIEW'; $case->status='FINANCE_UNDER_REVIEW'; }
         }
         $event=$decision==='approve'?'RECEIPT_APPROVED':($decision==='refund'?'RECEIPT_REFUNDED':'RECEIPT_REJECTED'); $meta=['attachment_id'=>$attachment_id,'receipt_amount'=>$receipt_amount,'review_type'=>$subtype,'reason_key'=>$reason_key,'details'=>$safe_details]; if($amount!==null)$meta['approved_amount']=$amount; if($note!=='')$meta['description']=$note; Biawin_CRM_Deficiency_Workflow::action((int)$case->id,(int)$case->customer_id,'finance',$event,$from_status,$to_status,$meta);
@@ -370,6 +371,7 @@ class Biawin_CRM_Finance_Review
     public static function ajax_finalize_receipts(): void
     {
         $case = self::guard_case();
+        Biawin_CRM_DB::assert_customer_mutable((int)$case->customer_id);
         if (!self::can_decide($case)) wp_send_json(['ok'=>false,'message'=>'دسترسی برگرداندن پرونده از مالی را ندارید.'],403);
 
         global $wpdb;
@@ -378,7 +380,7 @@ class Biawin_CRM_Finance_Review
         $reviews = self::table();
         $case_id = (int)$case->id;
 
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             // Lock the case so two finalize clicks cannot return the same case twice.
             $locked = $wpdb->get_row($wpdb->prepare("SELECT * FROM $cases WHERE id=%d FOR UPDATE", $case_id));
@@ -386,7 +388,7 @@ class Biawin_CRM_Finance_Review
 
             // Idempotent success for a concurrent/repeated request that already finished correctly.
             if ((string)$locked->status === 'RETURNED_TO_DEFICIENCY' && (string)$locked->current_department === 'deficiency' && !empty($locked->finance_finished_at)) {
-                $wpdb->query('COMMIT');
+                Biawin_CRM_DB::write('query', 'COMMIT');
                 wp_send_json(['ok'=>true,'message'=>'این پرونده قبلاً به رفع ناقصی برگشت داده شده است.','closed'=>true,'already_finalized'=>true]);
             }
 
@@ -427,7 +429,7 @@ class Biawin_CRM_Finance_Review
             ];
 
             // No extra "final approval" state: this is the single terminal finance transition requested by the workflow.
-            $ok = $wpdb->update($cases, [
+            $ok = Biawin_CRM_DB::write('update', $cases, [
                 'status' => 'RETURNED_TO_DEFICIENCY',
                 'current_department' => 'deficiency',
                 'finance_result_json' => wp_json_encode($meta, JSON_UNESCAPED_UNICODE),
@@ -449,7 +451,7 @@ class Biawin_CRM_Finance_Review
                 $meta
             );
 
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             wp_send_json([
                 'ok'=>true,
                 'message'=>'بررسی مالی تکمیل شد و پرونده به رفع ناقصی برگشت داده شد.',
@@ -459,7 +461,7 @@ class Biawin_CRM_Finance_Review
                 'finance_finished_at'=>$now,
             ]);
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             wp_send_json(['ok'=>false,'message'=>$e->getMessage() ?: 'عملیات انجام نشد.'],400);
         }
     }

@@ -657,7 +657,7 @@ class Biawin_CRM_Import_Service
     {
         global $wpdb;
         $now = Biawin_CRM_DB::now();
-        $wpdb->insert(Biawin_CRM_DB::table('imports'), [
+        Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('imports'), [
             'file_name' => $file_name,
             'mapping_json' => wp_json_encode($mapping, JSON_UNESCAPED_UNICODE),
             'dry_run_json' => wp_json_encode([
@@ -682,7 +682,7 @@ class Biawin_CRM_Import_Service
             $existing_customer_ids = self::existing_customer_ids_for_group($group, $analysis['invoices']);
             $status = empty($group['suspicious']) ? 'auto_linked' : 'needs_review';
             if (!$existing_customer_ids) {
-                $wpdb->insert(Biawin_CRM_DB::table('customers'), [
+                Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('customers'), [
                     'internal_uuid' => wp_generate_uuid4(),
                     'display_name' => $display_name,
                     'normalized_name' => Biawin_CRM_Normalizer::name($display_name),
@@ -695,7 +695,7 @@ class Biawin_CRM_Import_Service
                 $customer_id = (int) $wpdb->insert_id;
             } else {
                 $customer_id = (int) $existing_customer_ids[0];
-                $wpdb->update(Biawin_CRM_DB::table('customers'), [
+                Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'), [
                     'display_name' => $display_name,
                     'normalized_name' => Biawin_CRM_Normalizer::name($display_name),
                     'sales_manager' => $sales_manager ?: null,
@@ -705,7 +705,7 @@ class Biawin_CRM_Import_Service
             }
 
             foreach ($group['phones'] as $idx => $phone) {
-                $wpdb->query($wpdb->prepare(
+                Biawin_CRM_DB::write('query', $wpdb->prepare(
                     "INSERT INTO " . Biawin_CRM_DB::table('phones') . " (customer_id, raw_phone, normalized_phone, source, is_primary, created_at)
                      VALUES (%d, %s, %s, 'import', %d, %s)
                      ON DUPLICATE KEY UPDATE customer_id = IF(auto_match_blocked = 0, VALUES(customer_id), customer_id)",
@@ -721,19 +721,19 @@ class Biawin_CRM_Import_Service
                 $invoice = $analysis['invoices'][$code];
                 $invoice_id = self::upsert_invoice($customer_id, $invoice, $import_id, $now);
         self::recalculate_assignment_cohort($customer_id);
-                $wpdb->delete(Biawin_CRM_DB::table('invoice_phones'), ['invoice_id' => $invoice_id]);
+                Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('invoice_phones'), ['invoice_id' => $invoice_id]);
                 foreach (array_values($invoice['phones']) as $idx => $invoice_phone) {
-                    $wpdb->insert(Biawin_CRM_DB::table('invoice_phones'), [
+                    Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('invoice_phones'), [
                         'invoice_id' => $invoice_id,
                         'normalized_phone' => $invoice_phone,
                         'phone_position' => $idx + 1,
                         'created_at' => $now,
                     ]);
                 }
-                $wpdb->delete(Biawin_CRM_DB::table('invoice_items'), ['invoice_id' => $invoice_id]);
-                $wpdb->delete(Biawin_CRM_DB::table('services'), ['invoice_id' => $invoice_id]);
+                Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('invoice_items'), ['invoice_id' => $invoice_id]);
+                Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('services'), ['invoice_id' => $invoice_id]);
                 foreach ($invoice['products'] as $product) {
-                    $wpdb->query($wpdb->prepare(
+                    Biawin_CRM_DB::write('query', $wpdb->prepare(
                         "INSERT INTO " . Biawin_CRM_DB::table('invoice_items') . " (invoice_id, product_name, quantity, created_at)
                          VALUES (%d, %s, %f, %s)
                          ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)",
@@ -743,12 +743,12 @@ class Biawin_CRM_Import_Service
                         $now
                     ));
                 }
-                $wpdb->query($wpdb->prepare(
+                Biawin_CRM_DB::write('query', $wpdb->prepare(
                     "DELETE FROM " . Biawin_CRM_DB::table('payments') . " WHERE invoice_id=%d AND source_import_id IS NOT NULL",
                     $invoice_id
                 ));
                 foreach (array_unique($invoice['services']) as $service) {
-                    $wpdb->insert(Biawin_CRM_DB::table('services'), [
+                    Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('services'), [
                         'invoice_id' => $invoice_id,
                         'customer_id' => $customer_id,
                         'service_name' => $service,
@@ -758,7 +758,7 @@ class Biawin_CRM_Import_Service
                     ]);
                 }
                 if ($invoice['amount_paid'] > 0) {
-                    $wpdb->insert(Biawin_CRM_DB::table('payments'), [
+                    Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('payments'), [
                         'invoice_id' => $invoice_id,
                         'amount' => $invoice['amount_paid'],
                         'payment_info' => $invoice['payment_info'],
@@ -768,7 +768,7 @@ class Biawin_CRM_Import_Service
                 }
             }
 
-            $wpdb->insert(Biawin_CRM_DB::table('merge_events'), [
+            Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('merge_events'), [
                 'primary_customer_id' => $customer_id,
                 'merged_customer_ids' => wp_json_encode([$customer_id], JSON_UNESCAPED_UNICODE),
                 'merge_type' => empty($group['suspicious']) ? 'auto' : 'suspect',
@@ -834,7 +834,7 @@ class Biawin_CRM_Import_Service
                 $conflicts[] = 'وضعیت فایل جدید با وضعیت قبلی فاکتور متفاوت است.';
             }
             $before = $existing;
-            $wpdb->update($table, [
+            Biawin_CRM_DB::write('update', $table, [
                 'customer_id' => $customer_id,
                 'invoice_name' => $invoice['name'] ?: $existing->invoice_name,
                 'amount_paid' => $invoice['amount_paid'] ?: $existing->amount_paid,
@@ -857,7 +857,7 @@ class Biawin_CRM_Import_Service
             return (int) $existing->id;
         }
 
-        $wpdb->insert($table, [
+        Biawin_CRM_DB::write('insert', $table, [
             'customer_id' => $customer_id,
             'invoice_code' => $invoice['invoice_code'],
             'invoice_name' => $invoice['name'],
@@ -901,7 +901,7 @@ class Biawin_CRM_Import_Service
         $total = (int)($stats->total_count ?? 0);
         $y1404 = (int)($stats->y1404_count ?? 0);
         $cohort = ($total > 0 && $total === $y1404) ? '1404' : 'normal';
-        $wpdb->update($customers, ['assignment_cohort'=>$cohort, 'updated_at'=>Biawin_CRM_DB::now()], ['id'=>$customer_id]);
+        Biawin_CRM_DB::write('update', $customers, ['assignment_cohort'=>$cohort, 'updated_at'=>Biawin_CRM_DB::now()], ['id'=>$customer_id]);
     }
 
     /* ---------------------------------------------------------------------
@@ -1019,7 +1019,7 @@ class Biawin_CRM_Import_Service
         $offset = ftell($fh);
         fclose($fh);
         $now = Biawin_CRM_DB::now();
-        $ok = $wpdb->insert(Biawin_CRM_DB::table('import_jobs'), [
+        $ok = Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('import_jobs'), [
             'job_token' => $job_token,
             'upload_token' => $upload_token,
             'file_name' => $name,
@@ -1137,7 +1137,7 @@ class Biawin_CRM_Import_Service
         foreach ($batch['invoices'] as $code=>$invoice) self::merge_stage_invoice($job_token,$code,$invoice);
         foreach ($batch['invoice_phones'] as $code=>$phones) {
             foreach ($phones as $phone) {
-                $wpdb->query($wpdb->prepare(
+                Biawin_CRM_DB::write('query', $wpdb->prepare(
                     "INSERT IGNORE INTO ".Biawin_CRM_DB::table('import_stage_phones')." (job_token,invoice_code,normalized_phone) VALUES (%s,%s,%s)",
                     $job_token,$code,$phone
                 ));
@@ -1154,7 +1154,7 @@ class Biawin_CRM_Import_Service
                 'high_risk_json'=>wp_json_encode($stats['high_risk_phones'],JSON_UNESCAPED_UNICODE),
             ]);
         }
-        $wpdb->update(Biawin_CRM_DB::table('import_jobs'),$updates,['id'=>(int)$job->id]);
+        Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('import_jobs'),$updates,['id'=>(int)$job->id]);
         return [
             'ok'=>true,'done'=>$eof,'phase'=>$eof?'preview':'stage','processedRows'=>$processed,
             'totalRows'=>(int)$job->total_rows,'missingRows'=>$missing,
@@ -1236,9 +1236,9 @@ class Biawin_CRM_Import_Service
             $base=json_decode((string)$existing->invoice_json,true)?:self::empty_invoice($code,[],[]);
             $merged=self::merge_invoice_aggregates($base,$incoming);
             self::finalize_invoice_conflicts($merged);
-            $wpdb->update($table,['source_customer_id'=>$merged['customer_external_id']??null,'invoice_json'=>wp_json_encode($merged,JSON_UNESCAPED_UNICODE),'row_count'=>(int)$merged['rows'],'has_conflict'=>empty($merged['conflicts'])?0:1,'updated_at'=>Biawin_CRM_DB::now()],['id'=>(int)$existing->id]);
+            Biawin_CRM_DB::write('update', $table,['source_customer_id'=>$merged['customer_external_id']??null,'invoice_json'=>wp_json_encode($merged,JSON_UNESCAPED_UNICODE),'row_count'=>(int)$merged['rows'],'has_conflict'=>empty($merged['conflicts'])?0:1,'updated_at'=>Biawin_CRM_DB::now()],['id'=>(int)$existing->id]);
         }else{
-            $wpdb->insert($table,['job_token'=>$job_token,'invoice_code'=>$code,'source_customer_id'=>$incoming['customer_external_id']??null,'invoice_json'=>wp_json_encode($incoming,JSON_UNESCAPED_UNICODE),'row_count'=>(int)$incoming['rows'],'has_conflict'=>empty($incoming['conflicts'])?0:1,'updated_at'=>Biawin_CRM_DB::now()]);
+            Biawin_CRM_DB::write('insert', $table,['job_token'=>$job_token,'invoice_code'=>$code,'source_customer_id'=>$incoming['customer_external_id']??null,'invoice_json'=>wp_json_encode($incoming,JSON_UNESCAPED_UNICODE),'row_count'=>(int)$incoming['rows'],'has_conflict'=>empty($incoming['conflicts'])?0:1,'updated_at'=>Biawin_CRM_DB::now()]);
         }
     }
 
@@ -1284,10 +1284,10 @@ class Biawin_CRM_Import_Service
         if(!$job || (int)$job->created_by!==get_current_user_id())return ['ok'=>false,'message'=>'Job معتبر نیست.'];
         if($job->phase!=='preview')return ['ok'=>false,'message'=>'ایمپورت هنوز آماده ثبت نهایی نیست.'];
         $now=Biawin_CRM_DB::now();
-        $wpdb->insert(Biawin_CRM_DB::table('imports'),['file_name'=>$job->file_name,'mapping_json'=>$job->mapping_json,'dry_run_json'=>wp_json_encode(self::job_preview($job_token),JSON_UNESCAPED_UNICODE),'status'=>'processing','imported_by'=>get_current_user_id(),'created_at'=>$now]);
+        Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('imports'),['file_name'=>$job->file_name,'mapping_json'=>$job->mapping_json,'dry_run_json'=>wp_json_encode(self::job_preview($job_token),JSON_UNESCAPED_UNICODE),'status'=>'processing','imported_by'=>get_current_user_id(),'created_at'=>$now]);
         $import_id=(int)$wpdb->insert_id;
         if(!$import_id)return ['ok'=>false,'message'=>'ساخت رکورد ایمپورت ناموفق بود.'];
-        $wpdb->update(Biawin_CRM_DB::table('import_jobs'),['phase'=>'commit','status'=>'committing','import_id'=>$import_id,'last_stage_id'=>0,'updated_at'=>$now],['id'=>(int)$job->id]);
+        Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('import_jobs'),['phase'=>'commit','status'=>'committing','import_id'=>$import_id,'last_stage_id'=>0,'updated_at'=>$now],['id'=>(int)$job->id]);
         return ['ok'=>true,'importId'=>$import_id,'totalInvoices'=>(int)$job->staged_invoices];
     }
 
@@ -1303,7 +1303,7 @@ class Biawin_CRM_Import_Service
         $high=json_decode((string)$job->high_risk_json,true)?:[]; $last=(int)$job->last_stage_id; $count=0;
         foreach($rows as $r){$invoice=json_decode((string)$r->invoice_json,true)?:[]; if(!$invoice){$last=(int)$r->id;continue;} self::commit_staged_invoice($invoice,(int)$job->import_id,$high);$last=(int)$r->id;$count++;}
         $committed=(int)$job->committed_invoices+$count;
-        $wpdb->update(Biawin_CRM_DB::table('import_jobs'),['committed_invoices'=>$committed,'last_stage_id'=>$last,'updated_at'=>Biawin_CRM_DB::now()],['id'=>(int)$job->id]);
+        Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('import_jobs'),['committed_invoices'=>$committed,'last_stage_id'=>$last,'updated_at'=>Biawin_CRM_DB::now()],['id'=>(int)$job->id]);
         $done=$committed >= (int)$job->staged_invoices;
         if($done){$job->committed_invoices=$committed;self::complete_job($job);}
         return ['ok'=>true,'done'=>$done,'committedInvoices'=>$committed,'totalInvoices'=>(int)$job->staged_invoices];
@@ -1328,12 +1328,12 @@ class Biawin_CRM_Import_Service
             if(!$customer_id && $source_customer_id){
                 $source_external=(string)$wpdb->get_var($wpdb->prepare("SELECT source_customer_id FROM $customers WHERE id=%d",$source_customer_id));
                 if($source_external===''){
-                    $claimed=$wpdb->update($customers,['source_customer_id'=>$external_id,'updated_at'=>$now],['id'=>$source_customer_id]);
+                    $claimed=Biawin_CRM_DB::write('update', $customers,['source_customer_id'=>$external_id,'updated_at'=>$now],['id'=>$source_customer_id]);
                     if($claimed!==false)$customer_id=$source_customer_id;
                 }
             }
             if(!$customer_id){
-                $wpdb->insert($customers,[
+                Biawin_CRM_DB::write('insert', $customers,[
                     'internal_uuid'=>wp_generate_uuid4(),'source_customer_id'=>$external_id,
                     'display_name'=>$invoice['name']?:null,'normalized_name'=>Biawin_CRM_Normalizer::name($invoice['name']??''),
                     'sales_manager'=>trim((string)($invoice['sales_manager']??'')) ?: null,
@@ -1353,13 +1353,13 @@ class Biawin_CRM_Import_Service
             }
             $ids=array_values(array_unique(array_filter($ids)));
             if(!$ids){
-                $wpdb->insert($customers,['internal_uuid'=>wp_generate_uuid4(),'display_name'=>$invoice['name']?:null,'normalized_name'=>Biawin_CRM_Normalizer::name($invoice['name']??''),'sales_manager'=>trim((string)($invoice['sales_manager']??'')) ?: null,'status'=>'auto_linked','total_paid'=>0,'created_at'=>$now,'updated_at'=>$now]);
+                Biawin_CRM_DB::write('insert', $customers,['internal_uuid'=>wp_generate_uuid4(),'display_name'=>$invoice['name']?:null,'normalized_name'=>Biawin_CRM_Normalizer::name($invoice['name']??''),'sales_manager'=>trim((string)($invoice['sales_manager']??'')) ?: null,'status'=>'auto_linked','total_paid'=>0,'created_at'=>$now,'updated_at'=>$now]);
                 $customer_id=(int)$wpdb->insert_id;
             }else $customer_id=(int)$ids[0];
         }
 
         if(!$customer_id)return;
-        $wpdb->update($customers,['display_name'=>$invoice['name']?:null,'normalized_name'=>Biawin_CRM_Normalizer::name($invoice['name']??''),'sales_manager'=>trim((string)($invoice['sales_manager']??'')) ?: null,'updated_at'=>$now],['id'=>$customer_id]);
+        Biawin_CRM_DB::write('update', $customers,['display_name'=>$invoice['name']?:null,'normalized_name'=>Biawin_CRM_Normalizer::name($invoice['name']??''),'sales_manager'=>trim((string)($invoice['sales_manager']??'')) ?: null,'updated_at'=>$now],['id'=>$customer_id]);
 
         // Reassign the invoice first; this allows old phone-based profiles to collapse as the file is re-imported.
         $invoice_id=self::upsert_invoice($customer_id,$invoice,$import_id,$now);
@@ -1369,24 +1369,24 @@ class Biawin_CRM_Import_Service
             $row=$wpdb->get_row($wpdb->prepare("SELECT id,customer_id,auto_match_blocked,is_primary FROM ".Biawin_CRM_DB::table('phones')." WHERE normalized_phone=%s",$phone));
             $make_primary=(!$has_primary && $idx===0)?1:0;
             if(!$row){
-                $wpdb->insert(Biawin_CRM_DB::table('phones'),['customer_id'=>$customer_id,'raw_phone'=>$phone,'normalized_phone'=>$phone,'phone_status'=>'unverified','relation_type'=>'unknown','source'=>'import','is_primary'=>$make_primary,'created_at'=>$now]);
+                Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('phones'),['customer_id'=>$customer_id,'raw_phone'=>$phone,'normalized_phone'=>$phone,'phone_status'=>'unverified','relation_type'=>'unknown','source'=>'import','is_primary'=>$make_primary,'created_at'=>$now]);
                 if($make_primary)$has_primary=1;
             }elseif((int)$row->customer_id===$customer_id || empty($row->customer_id) || ($source_customer_id && (int)$row->customer_id===$source_customer_id)){
                 $keep_primary = $make_primary ? 1 : (((int)$row->customer_id === $customer_id && !empty($row->is_primary)) ? 1 : 0);
-                $wpdb->update(Biawin_CRM_DB::table('phones'),['customer_id'=>$customer_id,'is_primary'=>$keep_primary],['id'=>(int)$row->id]);
+                Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('phones'),['customer_id'=>$customer_id,'is_primary'=>$keep_primary],['id'=>(int)$row->id]);
                 if($make_primary)$has_primary=1;
             }
         }
         Biawin_CRM_Customer_Service::ensure_single_primary_phone($customer_id);
 
-        $wpdb->delete(Biawin_CRM_DB::table('invoice_phones'),['invoice_id'=>$invoice_id]);
-        foreach(array_values($invoice['phones']??[]) as $idx=>$phone)$wpdb->insert(Biawin_CRM_DB::table('invoice_phones'),['invoice_id'=>$invoice_id,'normalized_phone'=>$phone,'phone_position'=>$idx+1,'created_at'=>$now]);
-        $wpdb->delete(Biawin_CRM_DB::table('invoice_items'),['invoice_id'=>$invoice_id]);
-        foreach($invoice['products']??[] as $product)$wpdb->query($wpdb->prepare("INSERT INTO ".Biawin_CRM_DB::table('invoice_items')." (invoice_id,product_name,quantity,created_at) VALUES (%d,%s,%f,%s) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)",$invoice_id,$product['name'],$product['quantity'],$now));
-        $wpdb->delete(Biawin_CRM_DB::table('services'),['invoice_id'=>$invoice_id]);
-        foreach(array_unique($invoice['services']??[]) as $service)$wpdb->insert(Biawin_CRM_DB::table('services'),['invoice_id'=>$invoice_id,'customer_id'=>$customer_id,'service_name'=>$service,'source_import_id'=>$import_id,'created_at'=>$now]);
-        $wpdb->query($wpdb->prepare("DELETE FROM ".Biawin_CRM_DB::table('payments')." WHERE invoice_id=%d AND source_import_id IS NOT NULL",$invoice_id));
-        if(!empty($invoice['amount_paid']))$wpdb->insert(Biawin_CRM_DB::table('payments'),['invoice_id'=>$invoice_id,'amount'=>$invoice['amount_paid'],'payment_info'=>$invoice['payment_info']??'','source_import_id'=>$import_id,'created_at'=>$now]);
+        Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('invoice_phones'),['invoice_id'=>$invoice_id]);
+        foreach(array_values($invoice['phones']??[]) as $idx=>$phone)Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('invoice_phones'),['invoice_id'=>$invoice_id,'normalized_phone'=>$phone,'phone_position'=>$idx+1,'created_at'=>$now]);
+        Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('invoice_items'),['invoice_id'=>$invoice_id]);
+        foreach($invoice['products']??[] as $product)Biawin_CRM_DB::write('query', $wpdb->prepare("INSERT INTO ".Biawin_CRM_DB::table('invoice_items')." (invoice_id,product_name,quantity,created_at) VALUES (%d,%s,%f,%s) ON DUPLICATE KEY UPDATE quantity=VALUES(quantity)",$invoice_id,$product['name'],$product['quantity'],$now));
+        Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('services'),['invoice_id'=>$invoice_id]);
+        foreach(array_unique($invoice['services']??[]) as $service)Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('services'),['invoice_id'=>$invoice_id,'customer_id'=>$customer_id,'service_name'=>$service,'source_import_id'=>$import_id,'created_at'=>$now]);
+        Biawin_CRM_DB::write('query', $wpdb->prepare("DELETE FROM ".Biawin_CRM_DB::table('payments')." WHERE invoice_id=%d AND source_import_id IS NOT NULL",$invoice_id));
+        if(!empty($invoice['amount_paid']))Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('payments'),['invoice_id'=>$invoice_id,'amount'=>$invoice['amount_paid'],'payment_info'=>$invoice['payment_info']??'','source_import_id'=>$import_id,'created_at'=>$now]);
         Biawin_CRM_Customer_Service::recalculate_customer($customer_id);
         self::recalculate_assignment_cohort($customer_id);
         if($source_customer_id && $source_customer_id!==$customer_id){
@@ -1401,8 +1401,8 @@ class Biawin_CRM_Import_Service
         global $wpdb; $now=Biawin_CRM_DB::now();
         $mapping=json_decode((string)$job->mapping_json,true)?:[];
         if(!empty($mapping['__fill_customer_id_gaps'])) self::create_missing_source_profiles((string)$job->job_token,$now);
-        $wpdb->update(Biawin_CRM_DB::table('import_jobs'),['phase'=>'done','status'=>'completed','updated_at'=>$now],['id'=>(int)$job->id]);
-        if(!empty($job->import_id))$wpdb->update(Biawin_CRM_DB::table('imports'),['status'=>'committed','committed_at'=>$now],['id'=>(int)$job->import_id]);
+        Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('import_jobs'),['phase'=>'done','status'=>'completed','updated_at'=>$now],['id'=>(int)$job->id]);
+        if(!empty($job->import_id))Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('imports'),['status'=>'committed','committed_at'=>$now],['id'=>(int)$job->import_id]);
         self::cleanup_job_files($job);
     }
 
@@ -1419,7 +1419,7 @@ class Biawin_CRM_Import_Service
             if(isset($present[$i]))continue;
             $exists=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $customers WHERE source_customer_id=%s LIMIT 1",(string)$i));
             if($exists)continue;
-            $wpdb->insert($customers,['internal_uuid'=>wp_generate_uuid4(),'source_customer_id'=>(string)$i,'display_name'=>null,'normalized_name'=>null,'status'=>'source_only','total_paid'=>0,'created_at'=>$now,'updated_at'=>$now]);
+            Biawin_CRM_DB::write('insert', $customers,['internal_uuid'=>wp_generate_uuid4(),'source_customer_id'=>(string)$i,'display_name'=>null,'normalized_name'=>null,'status'=>'source_only','total_paid'=>0,'created_at'=>$now,'updated_at'=>$now]);
         }
     }
 
@@ -1427,9 +1427,9 @@ class Biawin_CRM_Import_Service
     {
         global $wpdb; $job=self::get_job($job_token); if(!$job || (int)$job->created_by!==get_current_user_id())return false;
         self::cleanup_job_files($job);
-        $wpdb->delete(Biawin_CRM_DB::table('import_stage_phones'),['job_token'=>$job_token]);
-        $wpdb->delete(Biawin_CRM_DB::table('import_stage_invoices'),['job_token'=>$job_token]);
-        $wpdb->update(Biawin_CRM_DB::table('import_jobs'),['status'=>'cancelled','phase'=>'cancelled','updated_at'=>Biawin_CRM_DB::now()],['id'=>(int)$job->id]); return true;
+        Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('import_stage_phones'),['job_token'=>$job_token]);
+        Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('import_stage_invoices'),['job_token'=>$job_token]);
+        Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('import_jobs'),['status'=>'cancelled','phase'=>'cancelled','updated_at'=>Biawin_CRM_DB::now()],['id'=>(int)$job->id]); return true;
     }
 
     private static function cleanup_job_files($job): void

@@ -2,7 +2,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-/** C1 DDL only. No backfill, locks, holds or ownership mutations. */
+/** Additive ownership DDL only; no data backfill or ownership mutations. */
 class Biawin_CRM_Ownership_Schema
 {
     public static function invoice_columns(): array
@@ -49,6 +49,11 @@ class Biawin_CRM_Ownership_Schema
                 created_at DATETIME NOT NULL,
                 updated_at DATETIME NOT NULL,
                 lock_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
+                snapshot_json LONGTEXT NULL,
+                execution_state VARCHAR(30) NOT NULL DEFAULT 'NOT_STARTED',
+                execution_error LONGTEXT NULL,
+                executed_at DATETIME NULL,
+                finalization_json LONGTEXT NULL,
                 PRIMARY KEY  (id),
                 UNIQUE KEY case_code (case_code),
                 KEY status (status),
@@ -57,7 +62,7 @@ class Biawin_CRM_Ownership_Schema
                 KEY claimant_status (claimant_customer_id,status),
                 KEY assignee_status (assigned_to_user_id,status),
                 KEY supervisor_status (supervisor_approval_status,status)
-            ) $charset",
+            ) ENGINE=InnoDB $charset",
             "CREATE TABLE {$p}ownership_case_assets (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 case_id BIGINT UNSIGNED NOT NULL,
@@ -84,7 +89,7 @@ class Biawin_CRM_Ownership_Schema
                 KEY asset (asset_type,asset_id),
                 KEY source_customer_id (source_customer_id),
                 KEY target_customer_id (target_customer_id)
-            ) $charset",
+            ) ENGINE=InnoDB $charset",
             "CREATE TABLE {$p}ownership_case_amendments (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 case_id BIGINT UNSIGNED NOT NULL,
@@ -96,7 +101,7 @@ class Biawin_CRM_Ownership_Schema
                 created_at DATETIME NOT NULL,
                 PRIMARY KEY  (id),
                 KEY case_id (case_id)
-            ) $charset",
+            ) ENGINE=InnoDB $charset",
             "CREATE TABLE {$p}ownership_locks (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 entity_type VARCHAR(20) NOT NULL,
@@ -112,7 +117,7 @@ class Biawin_CRM_Ownership_Schema
                 PRIMARY KEY  (id),
                 KEY entity_active (entity_type,entity_id,released_at),
                 KEY customer_active (customer_id,released_at)
-            ) $charset",
+            ) ENGINE=InnoDB $charset",
             "CREATE TABLE {$p}customer_holds (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 customer_id BIGINT UNSIGNED NOT NULL,
@@ -127,7 +132,7 @@ class Biawin_CRM_Ownership_Schema
                 PRIMARY KEY  (id),
                 KEY customer_status (customer_id,status),
                 KEY case_status (case_id,status)
-            ) $charset",
+            ) ENGINE=InnoDB $charset",
             "CREATE TABLE {$p}ownership_events (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 case_id BIGINT UNSIGNED NOT NULL,
@@ -143,7 +148,7 @@ class Biawin_CRM_Ownership_Schema
                 KEY customer_created (customer_id,created_at),
                 KEY asset_created (asset_type,asset_id,created_at),
                 KEY event_created (event_type,created_at)
-            ) $charset",
+            ) ENGINE=InnoDB $charset",
             "CREATE TABLE {$p}ownership_otp_challenges (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 case_id BIGINT UNSIGNED NOT NULL,
@@ -163,7 +168,7 @@ class Biawin_CRM_Ownership_Schema
                 created_at DATETIME NOT NULL,
                 PRIMARY KEY  (id),
                 KEY case_id (case_id)
-            ) $charset",
+            ) ENGINE=InnoDB $charset",
         ];
     }
 

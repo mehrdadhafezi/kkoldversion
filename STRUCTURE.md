@@ -137,3 +137,9 @@ Key boundaries:
 ## Ownership Reconciliation implementation design
 
 The approved domain contract is implemented from `docs/OWNERSHIP-RECONCILIATION-ARCHITECTURE-CONTRACT.md`; exact proposed schema/migrations/class boundaries are frozen in `docs/OWNERSHIP-RECONCILIATION-IMPLEMENTATION-DESIGN.md`. Both are documentation only in baseline 0.8.65.17; runtime code is not yet implemented.
+
+## Ownership Reconciliation C2 — backend implementation (0.8.65.19)
+
+The ownership backend now lives in dedicated repository/workflow/risk/OTP/transfer/audit services, plus Customer Hold, Ownership Lock, Invoice Phone and legacy Write Guard services. See `docs/OWNERSHIP-RECONCILIATION-C2-REPORT.md` for the callable API, verification limits and deployment prerequisites. No ownership UI is implemented.
+
+Existing CRM writes delegate to `Biawin_CRM_DB::write()` for centralized hold/ownership-lock checks. Customer mutation entry points and receipt promotion also validate holds before side effects. Ordinary reads stay available. Completed-profile recalculation ensures persistent invoice locks only where the current phone is deterministic; ambiguous legacy records produce audit findings. Deficiency/Finance state constants and transition logic are preserved; approved ownership finalization invokes their existing recalculation/routing paths under a private ownership execution context.

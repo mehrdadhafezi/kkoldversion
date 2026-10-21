@@ -221,25 +221,25 @@ class Biawin_CRM_Blacklist_Final_Commit_Engine
         if(!$run){
             $pre=self::preflight(); if(empty($pre['commit_ready']))return ['ok'=>false,'error'=>'Full Preflight PASS نیست؛ Run ساخته نشد.','preflight'=>$pre];
             $state=['processed'=>0,'committed'=>0,'quarantined'=>0,'records_moved'=>0,'rekeyed'=>0,'targets_created'=>0,'chunks'=>0,'quarantine_details'=>[]];
-            $uuid=wp_generate_uuid4(); $wpdb->insert(self::runs_table(),['run_uuid'=>$uuid,'plugin_version'=>BIAWIN_CRM_VERSION,'mode'=>self::MODE,'status'=>'committing','pilot_count'=>self::ELIGIBLE,'started_by'=>get_current_user_id(),'started_at'=>current_time('mysql'),'manifest_hash'=>self::EXPECTED_PLAN_SHA256,'preflight_json'=>wp_json_encode($pre,JSON_UNESCAPED_UNICODE),'result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)]); $run=$wpdb->get_row($wpdb->prepare("SELECT * FROM ".self::runs_table()." WHERE id=%d",(int)$wpdb->insert_id),ARRAY_A);
+            $uuid=wp_generate_uuid4(); Biawin_CRM_DB::write('insert', self::runs_table(),['run_uuid'=>$uuid,'plugin_version'=>BIAWIN_CRM_VERSION,'mode'=>self::MODE,'status'=>'committing','pilot_count'=>self::ELIGIBLE,'started_by'=>get_current_user_id(),'started_at'=>current_time('mysql'),'manifest_hash'=>self::EXPECTED_PLAN_SHA256,'preflight_json'=>wp_json_encode($pre,JSON_UNESCAPED_UNICODE),'result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)]); $run=$wpdb->get_row($wpdb->prepare("SELECT * FROM ".self::runs_table()." WHERE id=%d",(int)$wpdb->insert_id),ARRAY_A);
         }
         $state=self::state($run); $start=(int)($state['processed']??0); if($start>=count($eligible))return ['ok'=>true,'done'=>true,'state'=>$state];
         $chunk=array_slice($eligible,$start,self::CHUNK_SIZE); $chunkCommitted=0;$chunkQuarantine=0;$moved=0;$rekeyed=0;$created=0;
         foreach($chunk as $r){
             $sid=(int)$r['current_internal_id'];
-            $wpdb->query('START TRANSACTION');
+            Biawin_CRM_DB::write('query', 'START TRANSACTION');
             try{
                 $c=Biawin_CRM_DB::table('customers'); $wpdb->get_row($wpdb->prepare("SELECT * FROM $c WHERE id=%d FOR UPDATE",$sid),ARRAY_A);
                 $tid=(int)($r['source_target_internal_id']??0); if($tid)$wpdb->get_row($wpdb->prepare("SELECT * FROM $c WHERE id=%d FOR UPDATE",$tid),ARRAY_A);
-                $v=self::validate_profile($r,true); if(empty($v['safe'])){ $wpdb->query('ROLLBACK'); $chunkQuarantine++; $state['quarantine_details'][]=['source'=>$sid,'cid'=>$r['current_blacklisted_customer_id'],'reason'=>$v['reason']??'LIVE_REVALIDATION_FAILED']; continue; }
+                $v=self::validate_profile($r,true); if(empty($v['safe'])){ Biawin_CRM_DB::write('query', 'ROLLBACK'); $chunkQuarantine++; $state['quarantine_details'][]=['source'=>$sid,'cid'=>$r['current_blacklisted_customer_id'],'reason'=>$v['reason']??'LIVE_REVALIDATION_FAILED']; continue; }
                 $one=self::apply_profile($r,(int)$run['id']);
                 if(empty($one['ok']))throw new RuntimeException((string)($one['error']??'APPLY_FAILED'));
-                $wpdb->query('COMMIT');
+                Biawin_CRM_DB::write('query', 'COMMIT');
                 $chunkCommitted++; $moved+=(int)$one['records_moved']; $rekeyed+=(int)$one['rekeyed']; $created+=(int)$one['targets_created'];
-            }catch(Throwable $e){ $wpdb->query('ROLLBACK'); $chunkQuarantine++; $state['quarantine_details'][]=['source'=>$sid,'cid'=>$r['current_blacklisted_customer_id'],'reason'=>'PROFILE_ROLLBACK:'.$e->getMessage()]; }
+            }catch(Throwable $e){ Biawin_CRM_DB::write('query', 'ROLLBACK'); $chunkQuarantine++; $state['quarantine_details'][]=['source'=>$sid,'cid'=>$r['current_blacklisted_customer_id'],'reason'=>'PROFILE_ROLLBACK:'.$e->getMessage()]; }
         }
         $state['processed']=$start+count($chunk); $state['committed']=(int)$state['committed']+$chunkCommitted; $state['quarantined']=(int)$state['quarantined']+$chunkQuarantine; $state['records_moved']=(int)$state['records_moved']+$moved; $state['rekeyed']=(int)$state['rekeyed']+$rekeyed; $state['targets_created']=(int)$state['targets_created']+$created; $state['chunks']=(int)$state['chunks']+1;
-        $done=$state['processed']>=count($eligible); $status=$done?($state['quarantined']?'committed_with_quarantine':'committed'):'committing'; $upd=['status'=>$status,'result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)]; if($done){$upd['committed_at']=current_time('mysql');$upd['completed_at']=current_time('mysql');} $wpdb->update(self::runs_table(),$upd,['id'=>(int)$run['id']]);
+        $done=$state['processed']>=count($eligible); $status=$done?($state['quarantined']?'committed_with_quarantine':'committed'):'committing'; $upd=['status'=>$status,'result_json'=>wp_json_encode($state,JSON_UNESCAPED_UNICODE)]; if($done){$upd['committed_at']=current_time('mysql');$upd['completed_at']=current_time('mysql');} Biawin_CRM_DB::write('update', self::runs_table(),$upd,['id'=>(int)$run['id']]);
         return ['ok'=>true,'chunk_profiles'=>count($chunk),'chunk_committed'=>$chunkCommitted,'chunk_quarantined'=>$chunkQuarantine,'chunk_records_moved'=>$moved,'done'=>$done,'state'=>$state];
     }
 
@@ -255,13 +255,13 @@ class Biawin_CRM_Blacklist_Final_Commit_Engine
         }
         if($decision==='COMPOSITE_MIGRATE_SOURCE_THEN_REKEY_CURRENT' || $decision==='REKEY_EXISTING_BLACKLISTED_TARGET'){
             $final=(string)$r['final_customer_id']; if($final==='')return ['ok'=>false,'error'=>'FINAL_ID_EMPTY'];
-            $before=self::customer_row($sid); $ok=$wpdb->update(Biawin_CRM_DB::table('customers'),['source_customer_id'=>$final,'updated_at'=>Biawin_CRM_DB::now()],['id'=>$sid]); if($ok===false)return ['ok'=>false,'error'=>'REKEY_FAILED'];
+            $before=self::customer_row($sid); $ok=Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'),['source_customer_id'=>$final,'updated_at'=>Biawin_CRM_DB::now()],['id'=>$sid]); if($ok===false)return ['ok'=>false,'error'=>'REKEY_FAILED'];
             self::journal($run_id,'customers_rekey',$sid,$sid,$sid,self::hash_row($before),self::hash_row(self::customer_row($sid)),'applied',['old_customer_id'=>$r['current_blacklisted_customer_id'],'new_customer_id'=>$final]);
             $rekeyed=1; self::remove_guard($sid);
         } elseif($decision==='USE_EXISTING_VALID_TARGET'){
             // Source-only convergence: after all movable references are at target, retire the now-empty blacklisted shell.
             if(self::has_live_domain_refs($sid))return ['ok'=>false,'error'=>'SOURCE_STILL_HAS_DOMAIN_REFS'];
-            $before=self::customer_row($sid); $ok=$wpdb->delete(Biawin_CRM_DB::table('customers'),['id'=>$sid]); if($ok===false)return ['ok'=>false,'error'=>'SOURCE_RETIRE_DELETE_FAILED'];
+            $before=self::customer_row($sid); $ok=Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('customers'),['id'=>$sid]); if($ok===false)return ['ok'=>false,'error'=>'SOURCE_RETIRE_DELETE_FAILED'];
             self::journal($run_id,'customers_retire',$sid,$sid,$tid,self::hash_row($before),'','applied',['old_customer_id'=>$r['current_blacklisted_customer_id'],'target_internal_id'=>$tid]); self::remove_guard($sid); $rekeyed=1;
         }
         if($tid) Biawin_CRM_Customer_Service::recalculate_customer($tid);
@@ -281,7 +281,7 @@ class Biawin_CRM_Blacklist_Final_Commit_Engine
                 $before=self::hash_row($row); $data=['customer_id'=>$tid];
                 if($logical==='activities' && ($row['object_type']??'')==='customer' && (int)($row['object_id']??0)===$sid)$data['object_id']=$tid;
                 if($logical==='attachments' && isset($row['object_type'],$row['object_id']) && $row['object_type']==='customer' && (int)$row['object_id']===$sid)$data['object_id']=$tid;
-                $ok=$wpdb->update($t,$data,['id'=>(int)$row['id']]); if($ok===false)throw new RuntimeException('MOVE_FAILED_'.$logical.'_'.$row['id']);
+                $ok=Biawin_CRM_DB::write('update', $t,$data,['id'=>(int)$row['id']]); if($ok===false)throw new RuntimeException('MOVE_FAILED_'.$logical.'_'.$row['id']);
                 $after=$wpdb->get_row($wpdb->prepare("SELECT * FROM $t WHERE id=%d",(int)$row['id']),ARRAY_A); if(!$after||(int)($after['customer_id']??0)!==$tid)throw new RuntimeException('MOVE_VERIFY_FAILED_'.$logical.'_'.$row['id']);
                 self::journal($run_id,$logical,(int)$row['id'],$sid,$tid,$before,self::hash_row($after),'applied',[]); $moved++;
             }
@@ -295,7 +295,7 @@ class Biawin_CRM_Blacklist_Final_Commit_Engine
         $base=self::baseline_customer((string)$r['current_blacklisted_customer_id']);
         $name=(string)($base['display_name']??''); $norm=(string)($base['normalized_name']??''); $sm=(string)($base['sales_manager']??'');
         $data=['internal_uuid'=>wp_generate_uuid4(),'customer_code'=>null,'source_customer_id'=>$cid,'display_name'=>$name?:null,'normalized_name'=>$norm?:null,'sales_manager'=>$sm?:null,'status'=>'new','grade'=>null,'assignment_cohort'=>'normal','financial_score'=>null,'satisfaction_avg'=>null,'total_paid'=>0,'declared_paid'=>null,'discrepancy_amount'=>0,'locked_by'=>null,'locked_at'=>null,'created_at'=>Biawin_CRM_DB::now(),'updated_at'=>Biawin_CRM_DB::now()];
-        $ok=$wpdb->insert(Biawin_CRM_DB::table('customers'),$data); if($ok===false)return 0; $tid=(int)$wpdb->insert_id;
+        $ok=Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('customers'),$data); if($ok===false)return 0; $tid=(int)$wpdb->insert_id;
         self::journal($run_id,'customers_create',$tid,(int)$r['current_internal_id'],$tid,'',self::hash_row(self::customer_row($tid)),'applied',['source_customer_id'=>$cid]); return $tid;
     }
 
@@ -360,7 +360,7 @@ class Biawin_CRM_Blacklist_Final_Commit_Engine
                 UNIQUE KEY `run_uuid` (`run_uuid`),
                 KEY `mode_status` (`mode`,`status`)
             ) $charset";
-            if ($wpdb->query($sql) === false) {
+            if (Biawin_CRM_DB::write('query', $sql) === false) {
                 throw new RuntimeException('RUNS_TABLE_CREATE_FAILED: '.$wpdb->last_error);
             }
         }
@@ -382,7 +382,7 @@ class Biawin_CRM_Blacklist_Final_Commit_Engine
                 KEY `run_id` (`run_id`),
                 KEY `record_ref` (`table_name`,`record_id`)
             ) $charset";
-            if ($wpdb->query($sql) === false) {
+            if (Biawin_CRM_DB::write('query', $sql) === false) {
                 throw new RuntimeException('JOURNAL_TABLE_CREATE_FAILED: '.$wpdb->last_error);
             }
         }
@@ -411,8 +411,8 @@ class Biawin_CRM_Blacklist_Final_Commit_Engine
         }
     }
 
-    private static function journal(int $run,string $table,int $rid,int $beforeCid,int $afterCid,string $bh,string $ah,string $status,array $meta): void { global $wpdb; $ok=$wpdb->insert(self::journal_table(),['run_id'=>$run,'table_name'=>$table,'record_id'=>$rid,'before_customer_id'=>$beforeCid?:null,'after_customer_id'=>$afterCid?:null,'before_hash'=>$bh?:null,'after_hash'=>$ah?:null,'status'=>$status,'meta_json'=>wp_json_encode($meta,JSON_UNESCAPED_UNICODE),'created_at'=>Biawin_CRM_DB::now()]); if($ok===false)throw new RuntimeException('JOURNAL_WRITE_FAILED_'.$table.'_'.$rid); }
-    private static function remove_guard(int $sid): void { global $wpdb; $q=Biawin_CRM_Production_Readiness::table(); if(self::table_exists($q))$wpdb->delete($q,['customer_id'=>$sid]); }
+    private static function journal(int $run,string $table,int $rid,int $beforeCid,int $afterCid,string $bh,string $ah,string $status,array $meta): void { global $wpdb; $ok=Biawin_CRM_DB::write('insert', self::journal_table(),['run_id'=>$run,'table_name'=>$table,'record_id'=>$rid,'before_customer_id'=>$beforeCid?:null,'after_customer_id'=>$afterCid?:null,'before_hash'=>$bh?:null,'after_hash'=>$ah?:null,'status'=>$status,'meta_json'=>wp_json_encode($meta,JSON_UNESCAPED_UNICODE),'created_at'=>Biawin_CRM_DB::now()]); if($ok===false)throw new RuntimeException('JOURNAL_WRITE_FAILED_'.$table.'_'.$rid); }
+    private static function remove_guard(int $sid): void { global $wpdb; $q=Biawin_CRM_Production_Readiness::table(); if(self::table_exists($q))Biawin_CRM_DB::write('delete', $q,['customer_id'=>$sid]); }
     private static function customer_row(int $id): array { global $wpdb; return (array)$wpdb->get_row($wpdb->prepare("SELECT * FROM ".Biawin_CRM_DB::table('customers')." WHERE id=%d",$id),ARRAY_A); }
     private static function hash_row(array $r): string { if(!$r)return ''; ksort($r); return hash('sha256',wp_json_encode($r,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)); }
     private static function runs_table(): string { global $wpdb; return $wpdb->prefix.'bcrm_reconstruction_runs'; }

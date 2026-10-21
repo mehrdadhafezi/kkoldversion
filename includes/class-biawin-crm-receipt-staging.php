@@ -71,7 +71,7 @@ class Biawin_CRM_Receipt_Staging
         $table = self::table();
         $charset = method_exists($wpdb, 'get_charset_collate') ? $wpdb->get_charset_collate() : '';
         $wpdb->last_error = '';
-        $wpdb->query("CREATE TABLE IF NOT EXISTS $table (
+        Biawin_CRM_DB::write('query', "CREATE TABLE IF NOT EXISTS $table (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             staged_id VARCHAR(40) NOT NULL,
             user_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -217,6 +217,10 @@ class Biawin_CRM_Receipt_Staging
     public static function stage_entry(array $entry, string $token = '', int $case_id = 0): array
     {
         global $wpdb;
+        if ($case_id) {
+            $ownership_case_customer = $wpdb->get_var($wpdb->prepare('SELECT customer_id FROM ' . Biawin_CRM_DB::table('deficiency_cases') . ' WHERE id=%d', $case_id));
+            Biawin_CRM_DB::assert_customer_mutable((int)$ownership_case_customer);
+        }
         if (!self::ensure_table()) {
             return ['ok' => false, 'code' => 'table', 'message' => 'جدول صف آپلود فیش در دیتابیس ساخته نشد؛ دسترسی CREATE TABLE کاربر دیتابیس را بررسی کنید.'];
         }
@@ -246,11 +250,11 @@ class Biawin_CRM_Receipt_Staging
         $existing = self::find_by_hash($user_id, $case_id, $hash);
         if ($existing) {
             if (is_file((string)$existing->file_path)) {
-                $wpdb->update($table, ['touched_at' => time()], ['id' => (int)$existing->id]);
+                Biawin_CRM_DB::write('update', $table, ['touched_at' => time()], ['id' => (int)$existing->id]);
                 Biawin_CRM_Upload_Normalizer::log('receipt_staged_duplicate', ['staged_id' => (string)$existing->staged_id, 'case_id' => $case_id]);
                 return ['ok' => true, 'id' => (string)$existing->staged_id, 'hash' => $hash, 'name' => (string)$existing->file_name, 'size' => (int)$existing->file_size, 'duplicate' => true];
             }
-            $wpdb->delete($table, ['id' => (int)$existing->id]); // stale row whose file vanished: re-stage below
+            Biawin_CRM_DB::write('delete', $table, ['id' => (int)$existing->id]); // stale row whose file vanished: re-stage below
         }
         $count = (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table WHERE user_id=%d AND case_id=%d", $user_id, $case_id));
         if ($count >= self::MAX_STAGED_FILES) {
@@ -273,7 +277,7 @@ class Biawin_CRM_Receipt_Staging
         // A lost UNIQUE race is expected and handled below; never let wpdb print an HTML
         // error into this JSON response (WP_DEBUG sites show DB errors inline).
         $suppressed = method_exists($wpdb, 'suppress_errors') ? $wpdb->suppress_errors(true) : null;
-        $inserted = $wpdb->insert($table, [
+        $inserted = Biawin_CRM_DB::write('insert', $table, [
             'staged_id'    => $id,
             'user_id'      => $user_id,
             'case_id'      => $case_id,
@@ -338,7 +342,7 @@ class Biawin_CRM_Receipt_Staging
         $rows = $wpdb->get_results($wpdb->prepare("SELECT id, file_path FROM $table WHERE touched_at < %d LIMIT 200", time() - self::TTL_SECONDS));
         foreach (is_array($rows) ? $rows : [] as $row) {
             if (!empty($row->file_path)) @unlink((string)$row->file_path);
-            $wpdb->delete($table, ['id' => (int)$row->id]);
+            Biawin_CRM_DB::write('delete', $table, ['id' => (int)$row->id]);
         }
     }
 
@@ -393,7 +397,7 @@ class Biawin_CRM_Receipt_Staging
         $row = $wpdb->get_row($wpdb->prepare("SELECT id, file_path FROM $table WHERE staged_id=%s AND user_id=%d", $id, (int)get_current_user_id()));
         if (!$row) return false;
         @unlink((string)$row->file_path);
-        $wpdb->delete($table, ['id' => (int)$row->id]);
+        Biawin_CRM_DB::write('delete', $table, ['id' => (int)$row->id]);
         return true;
     }
 
@@ -437,6 +441,7 @@ class Biawin_CRM_Receipt_Staging
      */
     public static function finalize_for_case(object $case, array $ids, array $amounts = [], string $description = ''): array
     {
+        Biawin_CRM_DB::assert_customer_mutable((int)$case->customer_id);
         @set_time_limit(0);
         @ignore_user_abort(true); // a proxy timeout must not kill PHP mid-batch
         if (function_exists('wp_raise_memory_limit')) wp_raise_memory_limit('image');
@@ -490,7 +495,7 @@ class Biawin_CRM_Receipt_Staging
                 global $wpdb;
                 foreach ($docs as $doc) {
                     $att_id = (int)($doc['attachment_id'] ?? 0);
-                    if ($att_id > 0) $wpdb->delete(Biawin_CRM_DB::table('attachments'), ['id' => $att_id]);
+                    if ($att_id > 0) Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('attachments'), ['id' => $att_id]);
                     $wp_att = (int)($doc['wp_attachment_id'] ?? 0);
                     if ($wp_att > 0) wp_delete_attachment($wp_att, true);
                 }
@@ -578,7 +583,7 @@ class Biawin_CRM_Receipt_Staging
         $rows = $wpdb->get_results($wpdb->prepare("SELECT id, file_path FROM $table WHERE user_id=%d", (int)get_current_user_id()));
         foreach (is_array($rows) ? $rows : [] as $row) {
             @unlink((string)$row->file_path);
-            $wpdb->delete($table, ['id' => (int)$row->id]);
+            Biawin_CRM_DB::write('delete', $table, ['id' => (int)$row->id]);
         }
     }
 

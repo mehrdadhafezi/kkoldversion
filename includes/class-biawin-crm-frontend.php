@@ -1241,7 +1241,7 @@ class Biawin_CRM_Frontend
     private static function render_profile(int $customer_id): string
     {
         global $wpdb;
-        Biawin_CRM_Customer_Service::recalculate_customer($customer_id);
+        Biawin_CRM_DB::read_refresh($customer_id, static function () use ($customer_id) { Biawin_CRM_Customer_Service::recalculate_customer($customer_id); });
         $customer = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . Biawin_CRM_DB::table('customers') . ' WHERE id=%d', $customer_id));
         if (!$customer) {
             return '<div class="bcrm-portal"><div class="bcrm-alert is-danger">پرونده پیدا نشد.</div></div>';
@@ -1253,7 +1253,7 @@ class Biawin_CRM_Frontend
             return '<div class="bcrm-portal"><div class="bcrm-alert is-danger">این پرونده به شما تخصیص داده نشده است.</div></div>';
         }
 
-        Biawin_CRM_Customer_Service::ensure_single_primary_phone($customer_id);
+        Biawin_CRM_DB::read_refresh($customer_id, static function () use ($customer_id) { Biawin_CRM_Customer_Service::ensure_single_primary_phone($customer_id); });
         $phones = $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . Biawin_CRM_DB::table('phones') . ' WHERE customer_id=%d ORDER BY is_primary DESC,id ASC', $customer_id));
         $invoices = $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . Biawin_CRM_DB::table('invoices') . ' WHERE customer_id=%d ORDER BY id DESC', $customer_id));
         $item_count = (int) $wpdb->get_var($wpdb->prepare('SELECT COALESCE(SUM(ii.quantity),0) FROM ' . Biawin_CRM_DB::table('invoice_items') . ' ii INNER JOIN ' . Biawin_CRM_DB::table('invoices') . ' i ON i.id=ii.invoice_id WHERE i.customer_id=%d', $customer_id));
@@ -1656,7 +1656,7 @@ class Biawin_CRM_Frontend
         if (is_wp_error($attachment_id)) self::redirect_customer($id,'آپلود مدرک ناموفق بود: '.$attachment_id->get_error_message());
         global $wpdb;
         $case_id=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM ".Biawin_CRM_DB::table('financial_cases')." WHERE customer_id=%d AND status NOT IN ('resolved','closed','cancelled') ORDER BY id DESC LIMIT 1",$id));
-        $saved = $wpdb->insert(Biawin_CRM_DB::table('attachments'),[
+        $saved = Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('attachments'),[
             'customer_id'=>$id,'object_type'=>'financial_case','object_id'=>$case_id?:null,'wp_attachment_id'=>(int)$attachment_id,
             'file_kind'=>'payment_evidence','note'=>sanitize_text_field(wp_unslash($_POST['note']??'')),'uploaded_by'=>get_current_user_id(),'created_at'=>Biawin_CRM_DB::now()
         ]);
@@ -1952,7 +1952,7 @@ class Biawin_CRM_Frontend
     private static function profile_snapshot(int $customer_id): array
     {
         global $wpdb;
-        Biawin_CRM_Customer_Service::recalculate_customer($customer_id);
+        Biawin_CRM_DB::read_refresh($customer_id, static function () use ($customer_id) { Biawin_CRM_Customer_Service::recalculate_customer($customer_id); });
         $c=$wpdb->get_row($wpdb->prepare('SELECT * FROM '.Biawin_CRM_DB::table('customers').' WHERE id=%d',$customer_id));
         $phones=$wpdb->get_col($wpdb->prepare('SELECT normalized_phone FROM '.Biawin_CRM_DB::table('phones').' WHERE customer_id=%d ORDER BY is_primary DESC,id ASC',$customer_id));
         return [

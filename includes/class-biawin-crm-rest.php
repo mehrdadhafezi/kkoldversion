@@ -167,7 +167,7 @@ class Biawin_CRM_REST
 
         if ($interaction_id) {
             unset($payload['customer_id'], $payload['agent_user_id']);
-            $updated = $wpdb->update(Biawin_CRM_DB::table('interactions'), $payload, ['id' => $interaction_id]);
+            $updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('interactions'), $payload, ['id' => $interaction_id]);
             if ($updated === false) {
                 return new WP_REST_Response([
                     'ok' => false,
@@ -177,7 +177,7 @@ class Biawin_CRM_REST
             }
         } else {
             $payload['created_at'] = $now;
-            $inserted = $wpdb->insert(Biawin_CRM_DB::table('interactions'), $payload);
+            $inserted = Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('interactions'), $payload);
             if ($inserted === false || !(int) $wpdb->insert_id) {
                 return new WP_REST_Response([
                     'ok' => false,
@@ -214,7 +214,7 @@ class Biawin_CRM_REST
         $outcome = $requested_outcome_label;
         $operational_status = sanitize_key((string)($outcome_def['operational_status'] ?? ''));
         if ($operational_status === '') $operational_status = !empty($body['next_followup_at']) ? 'followup_needed' : 'in_review';
-        $status_updated = $wpdb->update(Biawin_CRM_DB::table('customers'), ['status' => $operational_status, 'updated_at' => $now], ['id' => $customer_id]);
+        $status_updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'), ['status' => $operational_status, 'updated_at' => $now], ['id' => $customer_id]);
         if ($status_updated === false) {
             return new WP_REST_Response([
                 'ok' => false,

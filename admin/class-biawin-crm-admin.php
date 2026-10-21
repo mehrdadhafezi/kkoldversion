@@ -822,7 +822,7 @@ class Biawin_CRM_Admin
         global $wpdb;
         $table = Biawin_CRM_DB::table('sales_manager_mapping');
         $now = Biawin_CRM_DB::now();
-        $ok = $wpdb->query($wpdb->prepare(
+        $ok = Biawin_CRM_DB::write('query', $wpdb->prepare(
             "INSERT INTO $table (sales_manager,agent_user_id,created_by,created_at,updated_at) VALUES (%s,%d,%d,%s,%s) ON DUPLICATE KEY UPDATE agent_user_id=VALUES(agent_user_id), updated_at=VALUES(updated_at)",
             $sales_manager,
             $agent_id,
@@ -943,11 +943,11 @@ class Biawin_CRM_Admin
             $used_rule = (bool)$agent;
             if(!$agent && $agents){$agent=$agents[$fallback_idx%count($agents)];$fallback_idx++;}
             if(!$agent) continue;
-            $wpdb->query('START TRANSACTION');
+            Biawin_CRM_DB::write('query', 'START TRANSACTION');
             // Serialize assignment changes per customer. Without this row lock two concurrent supervisor
             // requests can both insert an active assignment and make the same customer visible to two agents.
             $locked_customer=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $c WHERE id=%d FOR UPDATE",$id));
-            if(!$locked_customer){$wpdb->query('ROLLBACK');continue;}
+            if(!$locked_customer){Biawin_CRM_DB::write('query', 'ROLLBACK');continue;}
             $assignments_table=Biawin_CRM_DB::table('assignments');
             $active_rows=$wpdb->get_results($wpdb->prepare("SELECT id,agent_user_id FROM $assignments_table WHERE customer_id=%d AND status='assigned' FOR UPDATE",$id));
             if(count((array)$active_rows)>1){
@@ -956,21 +956,21 @@ class Biawin_CRM_Admin
                 if($close_ids){
                     $placeholders=implode(',',array_fill(0,count($close_ids),'%d'));
                     $close_args=array_merge([Biawin_CRM_DB::now()],$close_ids);
-                    $closed=$wpdb->query($wpdb->prepare("UPDATE $assignments_table SET status='duplicate_closed',completed_at=%s WHERE id IN ($placeholders) AND status='assigned'",...$close_args));
-                    if($closed===false){$wpdb->query('ROLLBACK');wp_die('اصلاح تخصیص تکراری انجام نشد: '.esc_html($wpdb->last_error?:'خطای دیتابیس'));}
+                    $closed=Biawin_CRM_DB::write('query', $wpdb->prepare("UPDATE $assignments_table SET status='duplicate_closed',completed_at=%s WHERE id IN ($placeholders) AND status='assigned'",...$close_args));
+                    if($closed===false){Biawin_CRM_DB::write('query', 'ROLLBACK');wp_die('اصلاح تخصیص تکراری انجام نشد: '.esc_html($wpdb->last_error?:'خطای دیتابیس'));}
                 }
                 $active_rows=$wpdb->get_results($wpdb->prepare("SELECT id,agent_user_id FROM $assignments_table WHERE customer_id=%d AND status='assigned' FOR UPDATE",$id));
             }
             $now=Biawin_CRM_DB::now();
             if($active_rows){
                 $primary=(int)$active_rows[0]->id;
-                $new=$wpdb->update($assignments_table,['agent_user_id'=>(int)$agent->ID,'assigned_by'=>get_current_user_id(),'assigned_at'=>$now,'completed_at'=>null],['id'=>$primary,'status'=>'assigned']);
+                $new=Biawin_CRM_DB::write('update', $assignments_table,['agent_user_id'=>(int)$agent->ID,'assigned_by'=>get_current_user_id(),'assigned_at'=>$now,'completed_at'=>null],['id'=>$primary,'status'=>'assigned']);
             } else {
-                $new=$wpdb->insert($assignments_table,['customer_id'=>$id,'agent_user_id'=>(int)$agent->ID,'status'=>'assigned','assigned_by'=>get_current_user_id(),'assigned_at'=>$now]);
+                $new=Biawin_CRM_DB::write('insert', $assignments_table,['customer_id'=>$id,'agent_user_id'=>(int)$agent->ID,'status'=>'assigned','assigned_by'=>get_current_user_id(),'assigned_at'=>$now]);
             }
-            $upd=$wpdb->update($c,['status'=>'assigned','updated_at'=>Biawin_CRM_DB::now()],['id'=>$id]);
-            if($new===false||$upd===false){$wpdb->query('ROLLBACK');wp_die('ذخیره تخصیص انجام نشد: '.esc_html($wpdb->last_error?:'خطای دیتابیس'));}
-            $wpdb->query('COMMIT');$assigned++; $assigned_details[]=['customer_id'=>(int)$id,'agent_user_id'=>(int)$agent->ID,'agent'=>$agent->display_name ?: $agent->user_login]; Biawin_CRM_DB::log('customer',$id,'assigned_to_agent',null,['agent_user_id'=>(int)$agent->ID,'batch_count'=>count($ids),'assignment_cohort'=>$cohort,'min_invoices'=>$min_invoices,'max_invoices'=>$max_invoices,'sales_manager_rule'=>$used_rule]);
+            $upd=Biawin_CRM_DB::write('update', $c,['status'=>'assigned','updated_at'=>Biawin_CRM_DB::now()],['id'=>$id]);
+            if($new===false||$upd===false){Biawin_CRM_DB::write('query', 'ROLLBACK');wp_die('ذخیره تخصیص انجام نشد: '.esc_html($wpdb->last_error?:'خطای دیتابیس'));}
+            Biawin_CRM_DB::write('query', 'COMMIT');$assigned++; $assigned_details[]=['customer_id'=>(int)$id,'agent_user_id'=>(int)$agent->ID,'agent'=>$agent->display_name ?: $agent->user_login]; Biawin_CRM_DB::log('customer',$id,'assigned_to_agent',null,['agent_user_id'=>(int)$agent->ID,'batch_count'=>count($ids),'assignment_cohort'=>$cohort,'min_invoices'=>$min_invoices,'max_invoices'=>$max_invoices,'sales_manager_rule'=>$used_rule]);
             Biawin_CRM_Workflow_Service::activity($id,'customer_assigned','پرونده به کارشناس تخصیص داده شد.','customer',$id,['agent_user_id'=>(int)$agent->ID,'assignment_cohort'=>$cohort,'sales_manager_rule'=>$used_rule]);
         }
         if($assigned_details){
@@ -1056,10 +1056,10 @@ class Biawin_CRM_Admin
             if (!$id && ctype_digit($raw)) $id = (int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $customers WHERE id=%d", (int)$raw));
             if (!$id && ctype_digit($raw)) $id = (int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $customers WHERE customer_code=%s", $raw));
             if (!$id) { $not_found[] = ['row'=>$line,'key'=>$raw]; continue; }
-            $wpdb->query('START TRANSACTION');
+            Biawin_CRM_DB::write('query', 'START TRANSACTION');
             // همان قفل‌گذاری handle_assignment — دو درخواست هم‌زمان نباید یک مشتری را دوبار تخصیص فعال بگیرند.
             $locked = (int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $customers WHERE id=%d FOR UPDATE", $id));
-            if (!$locked) { $wpdb->query('ROLLBACK'); $not_found[] = ['row'=>$line,'key'=>$raw]; continue; }
+            if (!$locked) { Biawin_CRM_DB::write('query', 'ROLLBACK'); $not_found[] = ['row'=>$line,'key'=>$raw]; continue; }
             $active_rows = $wpdb->get_results($wpdb->prepare("SELECT id,agent_user_id FROM $assignments_table WHERE customer_id=%d AND status='assigned' FOR UPDATE", $id));
             if (count((array)$active_rows) > 1) {
                 $keep_id = (int)$active_rows[0]->id;
@@ -1067,21 +1067,21 @@ class Biawin_CRM_Admin
                 if ($close_ids) {
                     $placeholders = implode(',', array_fill(0, count($close_ids), '%d'));
                     $close_args = array_merge([Biawin_CRM_DB::now()], $close_ids);
-                    $closed = $wpdb->query($wpdb->prepare("UPDATE $assignments_table SET status='duplicate_closed',completed_at=%s WHERE id IN ($placeholders) AND status='assigned'", ...$close_args));
-                    if ($closed === false) { $wpdb->query('ROLLBACK'); $errors[] = ['row'=>$line,'key'=>$raw,'reason'=>'duplicate repair failed']; continue; }
+                    $closed = Biawin_CRM_DB::write('query', $wpdb->prepare("UPDATE $assignments_table SET status='duplicate_closed',completed_at=%s WHERE id IN ($placeholders) AND status='assigned'", ...$close_args));
+                    if ($closed === false) { Biawin_CRM_DB::write('query', 'ROLLBACK'); $errors[] = ['row'=>$line,'key'=>$raw,'reason'=>'duplicate repair failed']; continue; }
                 }
                 $active_rows = $wpdb->get_results($wpdb->prepare("SELECT id,agent_user_id FROM $assignments_table WHERE customer_id=%d AND status='assigned' FOR UPDATE", $id));
             }
             $now = Biawin_CRM_DB::now();
             if ($active_rows) {
                 $primary = (int)$active_rows[0]->id;
-                $new = $wpdb->update($assignments_table, ['agent_user_id'=>$agent_id,'assigned_by'=>get_current_user_id(),'assigned_at'=>$now,'completed_at'=>null], ['id'=>$primary,'status'=>'assigned']);
+                $new = Biawin_CRM_DB::write('update', $assignments_table, ['agent_user_id'=>$agent_id,'assigned_by'=>get_current_user_id(),'assigned_at'=>$now,'completed_at'=>null], ['id'=>$primary,'status'=>'assigned']);
             } else {
-                $new = $wpdb->insert($assignments_table, ['customer_id'=>$id,'agent_user_id'=>$agent_id,'status'=>'assigned','assigned_by'=>get_current_user_id(),'assigned_at'=>$now]);
+                $new = Biawin_CRM_DB::write('insert', $assignments_table, ['customer_id'=>$id,'agent_user_id'=>$agent_id,'status'=>'assigned','assigned_by'=>get_current_user_id(),'assigned_at'=>$now]);
             }
-            $upd = $wpdb->update($customers, ['status'=>'assigned','updated_at'=>$now], ['id'=>$id]);
-            if ($new === false || $upd === false) { $wpdb->query('ROLLBACK'); $errors[] = ['row'=>$line,'key'=>$raw,'reason'=>'db']; continue; }
-            $wpdb->query('COMMIT');
+            $upd = Biawin_CRM_DB::write('update', $customers, ['status'=>'assigned','updated_at'=>$now], ['id'=>$id]);
+            if ($new === false || $upd === false) { Biawin_CRM_DB::write('query', 'ROLLBACK'); $errors[] = ['row'=>$line,'key'=>$raw,'reason'=>'db']; continue; }
+            Biawin_CRM_DB::write('query', 'COMMIT');
             $assigned++;
             $details[] = ['customer_id'=>$id,'agent_user_id'=>$agent_id,'agent'=>$agent->display_name ?: $agent->user_login];
             Biawin_CRM_DB::log('customer', $id, 'assigned_to_agent', null, ['agent_user_id'=>$agent_id,'source'=>'excel','excel_row'=>$line,'customer_key'=>$raw]);
@@ -1360,28 +1360,28 @@ class Biawin_CRM_Admin
         if (!$ids) wp_die('هیچ تخصیصی با فیلترهای انتخاب‌شده پیدا نشد.');
         $returned = 0;
         foreach ($ids as $id) {
-            $wpdb->query('START TRANSACTION');
+            Biawin_CRM_DB::write('query', 'START TRANSACTION');
             if (!$return_all_agents && $return_agent_ids) {
                 $agent_placeholders = implode(',', array_fill(0, count($return_agent_ids), '%d'));
                 $active = $wpdb->get_results($wpdb->prepare("SELECT id,agent_user_id FROM $assignments WHERE customer_id=%d AND agent_user_id IN ($agent_placeholders) AND status='assigned' FOR UPDATE", $id, ...$return_agent_ids));
             } else {
                 $active = $wpdb->get_results($wpdb->prepare("SELECT id,agent_user_id FROM $assignments WHERE customer_id=%d AND status='assigned' FOR UPDATE", $id));
             }
-            if (!$active) { $wpdb->query('ROLLBACK'); continue; }
+            if (!$active) { Biawin_CRM_DB::write('query', 'ROLLBACK'); continue; }
             if (!$return_all_agents && $return_agent_ids) {
                 $agent_placeholders = implode(',', array_fill(0, count($return_agent_ids), '%d'));
-                $updated = $wpdb->query($wpdb->prepare("UPDATE $assignments SET status='returned', completed_at=%s WHERE customer_id=%d AND agent_user_id IN ($agent_placeholders) AND status='assigned'", Biawin_CRM_DB::now(), $id, ...$return_agent_ids));
+                $updated = Biawin_CRM_DB::write('query', $wpdb->prepare("UPDATE $assignments SET status='returned', completed_at=%s WHERE customer_id=%d AND agent_user_id IN ($agent_placeholders) AND status='assigned'", Biawin_CRM_DB::now(), $id, ...$return_agent_ids));
             } else {
-                $updated = $wpdb->query($wpdb->prepare("UPDATE $assignments SET status='returned', completed_at=%s WHERE customer_id=%d AND status='assigned'", Biawin_CRM_DB::now(), $id));
+                $updated = Biawin_CRM_DB::write('query', $wpdb->prepare("UPDATE $assignments SET status='returned', completed_at=%s WHERE customer_id=%d AND status='assigned'", Biawin_CRM_DB::now(), $id));
             }
             $remaining_active = (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $assignments WHERE customer_id=%d AND status='assigned'", $id));
             $new_status_sql = $remaining_active ? "status=status" : "status=CASE WHEN status='assigned' THEN 'new' ELSE status END";
-            $customer_updated = $wpdb->query($wpdb->prepare("UPDATE $customers SET $new_status_sql, updated_at=%s WHERE id=%d", Biawin_CRM_DB::now(), $id));
+            $customer_updated = Biawin_CRM_DB::write('query', $wpdb->prepare("UPDATE $customers SET $new_status_sql, updated_at=%s WHERE id=%d", Biawin_CRM_DB::now(), $id));
             if ($updated === false || $customer_updated === false) {
-                $wpdb->query('ROLLBACK');
+                Biawin_CRM_DB::write('query', 'ROLLBACK');
                 wp_die('برگشت تخصیص ذخیره نشد: ' . esc_html($wpdb->last_error ?: 'خطای دیتابیس'));
             }
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             $returned++;
             $previous_agents = array_values(array_unique(array_map('intval', wp_list_pluck($active, 'agent_user_id'))));
             Biawin_CRM_DB::log('customer', $id, 'assignment_returned', null, ['previous_agent_user_ids'=>$previous_agents,'returned_by'=>get_current_user_id()]);
@@ -2141,7 +2141,7 @@ class Biawin_CRM_Admin
         $name=sanitize_text_field(wp_unslash($_POST['name']??''));
         $cost=Biawin_CRM_Normalizer::money($_POST['credit_cost']??0);
         if($code===''||$name===''||$cost<0) wp_die('اطلاعات خدمت نامعتبر است.');
-        $ok=$wpdb->insert(Biawin_CRM_DB::table('service_catalog'),['service_code'=>$code,'name'=>$name,'description'=>sanitize_textarea_field(wp_unslash($_POST['description']??'')),'credit_cost'=>$cost,'unit_key'=>sanitize_key($_POST['unit_key']??''),'is_active'=>1,'sort_order'=>0,'created_at'=>Biawin_CRM_DB::now(),'updated_at'=>Biawin_CRM_DB::now()]);
+        $ok=Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('service_catalog'),['service_code'=>$code,'name'=>$name,'description'=>sanitize_textarea_field(wp_unslash($_POST['description']??'')),'credit_cost'=>$cost,'unit_key'=>sanitize_key($_POST['unit_key']??''),'is_active'=>1,'sort_order'=>0,'created_at'=>Biawin_CRM_DB::now(),'updated_at'=>Biawin_CRM_DB::now()]);
         if($ok===false) wp_die('ذخیره خدمت انجام نشد: '.esc_html($wpdb->last_error ?: 'خطای دیتابیس'));
         wp_safe_redirect(admin_url('admin.php?page=biawin-crm-services'));exit;
     }
@@ -2152,7 +2152,7 @@ class Biawin_CRM_Admin
         $id=absint($_POST['service_id']??0); check_admin_referer('bcrm_update_service_'.$id);
         global $wpdb; $name=sanitize_text_field(wp_unslash($_POST['name']??'')); $cost=Biawin_CRM_Normalizer::money($_POST['credit_cost']??0);
         if(!$id || $name==='' || $cost<0) wp_die('اطلاعات خدمت نامعتبر است.');
-        $ok=$wpdb->update(Biawin_CRM_DB::table('service_catalog'),['name'=>$name,'credit_cost'=>$cost,'unit_key'=>sanitize_key($_POST['unit_key']??''),'is_active'=>!empty($_POST['is_active'])?1:0,'updated_at'=>Biawin_CRM_DB::now()],['id'=>$id]);
+        $ok=Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('service_catalog'),['name'=>$name,'credit_cost'=>$cost,'unit_key'=>sanitize_key($_POST['unit_key']??''),'is_active'=>!empty($_POST['is_active'])?1:0,'updated_at'=>Biawin_CRM_DB::now()],['id'=>$id]);
         if($ok===false) wp_die('ذخیره تغییرات خدمت انجام نشد: '.esc_html($wpdb->last_error ?: 'خطای دیتابیس'));
         Biawin_CRM_DB::log('service',$id,'service_updated',null,['name'=>$name,'credit_cost'=>$cost,'is_active'=>!empty($_POST['is_active'])?1:0]);
         wp_safe_redirect(admin_url('admin.php?page=biawin-crm-services')); exit;
@@ -2179,7 +2179,7 @@ class Biawin_CRM_Admin
         if($status==='resolved' && (!$profile || $profile->profile_completeness!=='complete')) $status='need_evidence';
         $data=['status'=>$status,'note'=>sanitize_textarea_field(wp_unslash($_POST['note']??'')),'assigned_user_id'=>get_current_user_id(),'updated_at'=>Biawin_CRM_DB::now()];
         if($status==='resolved'){ $data['resolved_by']=get_current_user_id(); $data['resolved_at']=Biawin_CRM_DB::now(); }
-        $ok=$wpdb->update(Biawin_CRM_DB::table('financial_cases'),$data,['id'=>$id]);
+        $ok=Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('financial_cases'),$data,['id'=>$id]);
         if($ok===false) wp_die('ذخیره وضعیت مالی انجام نشد: '.esc_html($wpdb->last_error ?: 'خطای دیتابیس'));
         Biawin_CRM_Workflow_Service::activity((int)$case->customer_id,'financial_case_status','وضعیت پرونده مالی تغییر کرد.','financial_case',$id,['status'=>$status,'note'=>$data['note']]);
         wp_safe_redirect(admin_url('admin.php?page=biawin-crm-financial')); exit;
@@ -2199,7 +2199,7 @@ class Biawin_CRM_Admin
         $data=['status'=>$status,'approved_amount'=>$approved,'payment_reference'=>$ref,'assigned_user_id'=>get_current_user_id(),'updated_at'=>Biawin_CRM_DB::now()];
         if($status==='paid') $data['paid_at']=Biawin_CRM_DB::now();
         if(in_array($status,['paid','rejected','cancelled','closed'],true)) $data['closed_at']=Biawin_CRM_DB::now();
-        $ok=$wpdb->update(Biawin_CRM_DB::table('refunds'),$data,['id'=>$id]);
+        $ok=Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('refunds'),$data,['id'=>$id]);
         if($ok===false) wp_die('ذخیره وضعیت عودت انجام نشد: '.esc_html($wpdb->last_error ?: 'خطای دیتابیس'));
         Biawin_CRM_Workflow_Service::activity((int)$refund->customer_id,'refund_status','وضعیت پرونده عودت تغییر کرد.','refund',$id,['status'=>$status,'approved_amount'=>$approved,'payment_reference'=>$ref]);
         wp_safe_redirect(admin_url('admin.php?page=biawin-crm-refunds')); exit;
@@ -2338,7 +2338,7 @@ class Biawin_CRM_Admin
             $u = get_user_by('id', $uid);
             if (!$u || !array_intersect((array)$u->roles, $allowed_roles)) wp_die('کاربر انتخاب‌شده کاربر پرتال CRM نیست.');
         }
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             $existing=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE unit_key=%s",$key));
             if ($v2 && !empty($extra['parent_unit_id'])) {
@@ -2351,24 +2351,24 @@ class Biawin_CRM_Admin
                 if (!(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM $table WHERE id=%d", (int)$extra['parent_unit_id']))) throw new RuntimeException('parent');
             }
             if($existing){
-                $saved=$wpdb->update($table,array_merge(['unit_name'=>$name,'supervisor_user_id'=>$supervisor?:null,'is_active'=>1,'updated_at'=>$now],$extra),['id'=>$existing]);
+                $saved=Biawin_CRM_DB::write('update', $table,array_merge(['unit_name'=>$name,'supervisor_user_id'=>$supervisor?:null,'is_active'=>1,'updated_at'=>$now],$extra),['id'=>$existing]);
                 if($saved===false) throw new RuntimeException('unit update failed');
                 $unit_id=$existing;
             } else {
-                $saved=$wpdb->insert($table,array_merge(['unit_key'=>$key,'unit_name'=>$name,'supervisor_user_id'=>$supervisor?:null,'is_active'=>1,'created_at'=>$now,'updated_at'=>$now],$extra));
+                $saved=Biawin_CRM_DB::write('insert', $table,array_merge(['unit_key'=>$key,'unit_name'=>$name,'supervisor_user_id'=>$supervisor?:null,'is_active'=>1,'created_at'=>$now,'updated_at'=>$now],$extra));
                 $unit_id=(int)$wpdb->insert_id;
                 if($saved===false||!$unit_id) throw new RuntimeException('unit insert failed');
             }
             $members=Biawin_CRM_DB::table('service_unit_members');
-            if($wpdb->delete($members,['unit_id'=>$unit_id])===false) throw new RuntimeException('member clear failed');
-            if($supervisor && $wpdb->insert($members,['unit_id'=>$unit_id,'user_id'=>$supervisor,'member_role'=>'supervisor','created_at'=>$now])===false) throw new RuntimeException('supervisor insert failed');
+            if(Biawin_CRM_DB::write('delete', $members,['unit_id'=>$unit_id])===false) throw new RuntimeException('member clear failed');
+            if($supervisor && Biawin_CRM_DB::write('insert', $members,['unit_id'=>$unit_id,'user_id'=>$supervisor,'member_role'=>'supervisor','created_at'=>$now])===false) throw new RuntimeException('supervisor insert failed');
             foreach($agents as $uid){
                 if($uid===$supervisor) continue;
-                if($wpdb->insert($members,['unit_id'=>$unit_id,'user_id'=>$uid,'member_role'=>'agent','created_at'=>$now])===false) throw new RuntimeException('agent insert failed');
+                if(Biawin_CRM_DB::write('insert', $members,['unit_id'=>$unit_id,'user_id'=>$uid,'member_role'=>'agent','created_at'=>$now])===false) throw new RuntimeException('agent insert failed');
             }
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             $msg = $e->getMessage() === 'cycle' ? 'واحد والد نمی‌تواند خود واحد یا یکی از زیرمجموعه‌هایش باشد.' : ($e->getMessage() === 'parent' ? 'واحد والد پیدا نشد.' : ('ذخیره واحد انجام نشد: ' . ($wpdb->last_error ?: 'خطای دیتابیس')));
             wp_die(esc_html($msg));
         }
@@ -3023,8 +3023,8 @@ class Biawin_CRM_Admin
             return ['ok'=>false,'message'=>'ساختار فایل بک‌آپ معتبر نیست.'];
         }
         $tables = array_values(array_filter(array_map('strval', $meta['tables']), static fn($t)=>strpos($t, $wpdb->prefix . 'bcrm_') === 0));
-        $wpdb->query('START TRANSACTION');
-        foreach (array_reverse($tables) as $table) $wpdb->query("DELETE FROM `$table`");
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
+        foreach (array_reverse($tables) as $table) Biawin_CRM_DB::write('query', "DELETE FROM `$table`");
         $count = 0;
         while (($line = fgets($fh)) !== false) {
             $item = json_decode($line, true);
@@ -3032,16 +3032,16 @@ class Biawin_CRM_Admin
             $table = (string)($item['table'] ?? '');
             $row = is_array($item['row'] ?? null) ? $item['row'] : [];
             if (!in_array($table, $tables, true) || !$row) continue;
-            $ok = $wpdb->insert($table, $row);
+            $ok = Biawin_CRM_DB::write('insert', $table, $row);
             if ($ok === false) {
-                $wpdb->query('ROLLBACK');
+                Biawin_CRM_DB::write('query', 'ROLLBACK');
                 fclose($fh);
                 return ['ok'=>false,'message'=>'بازگردانی در جدول ' . $table . ' ناموفق بود.'];
             }
             $count++;
         }
         fclose($fh);
-        $wpdb->query('COMMIT');
+        Biawin_CRM_DB::write('query', 'COMMIT');
         Biawin_CRM_DB::log('backup', null, 'crm_backup_restored', null, ['file'=>basename($file),'rows'=>$count]);
         return ['ok'=>true,'message'=>'بک‌آپ با موفقیت بازگردانی شد: ' . basename($file) . ' (' . number_format_i18n($count) . ' ردیف)'];
     }
@@ -3265,7 +3265,7 @@ class Biawin_CRM_Admin
                     self::invoice_ownership_sample($result, 'آماده ساخت پروفایل و انتقال', $invoice_code, (string)($invoice->current_source_id ?: ('#'.$invoice->customer_id)), $target_source_id, 'CustomerID مقصد وجود ندارد؛ در اجرای واقعی پروفایل جدید ساخته می‌شود و فاکتور به آن منتقل می‌شود.');
                     continue;
                 }
-                $inserted = $wpdb->insert($customers, [
+                $inserted = Biawin_CRM_DB::write('insert', $customers, [
                     'internal_uuid'=>wp_generate_uuid4(),
                     'source_customer_id'=>$target_source_id,
                     'display_name'=>null,
@@ -3296,8 +3296,8 @@ class Biawin_CRM_Admin
                 continue;
             }
             $old_customer_id = (int)$invoice->customer_id;
-            $updated = $wpdb->update($invoices, ['customer_id'=>(int)$target->id,'updated_at'=>Biawin_CRM_DB::now()], ['id'=>(int)$invoice->id]);
-            $updated_services = $wpdb->update($services, ['customer_id'=>(int)$target->id], ['invoice_id'=>(int)$invoice->id]);
+            $updated = Biawin_CRM_DB::write('update', $invoices, ['customer_id'=>(int)$target->id,'updated_at'=>Biawin_CRM_DB::now()], ['id'=>(int)$invoice->id]);
+            $updated_services = Biawin_CRM_DB::write('update', $services, ['customer_id'=>(int)$target->id], ['invoice_id'=>(int)$invoice->id]);
             if ($updated === false || $updated_services === false) {
                 $result['counts']['failed']++;
                 self::invoice_ownership_sample($result, 'ناموفق', $invoice_code, (string)($invoice->current_source_id ?: ('#'.$invoice->customer_id)), $target_source_id, $wpdb->last_error ?: 'خطای دیتابیس');
@@ -3354,7 +3354,7 @@ class Biawin_CRM_Admin
             $update['normalized_name'] = Biawin_CRM_Normalizer::name($display_name);
         }
         if ($sales_manager !== null) $update['sales_manager'] = $sales_manager;
-        if (count($update) > 1) $wpdb->update($customers, $update, ['id'=>$customer_id]);
+        if (count($update) > 1) Biawin_CRM_DB::write('update', $customers, $update, ['id'=>$customer_id]);
 
         if (!$invoice_ids) return;
         $placeholders = implode(',', array_fill(0, count($invoice_ids), '%d'));
@@ -3370,13 +3370,13 @@ class Biawin_CRM_Admin
         // detach stale imported phones so phone search cannot keep resolving to the old profile.
         if ($desired_phones) {
             $desired_placeholders = implode(',', array_fill(0, count($desired_phones), '%s'));
-            $wpdb->query($wpdb->prepare(
+            Biawin_CRM_DB::write('query', $wpdb->prepare(
                 "UPDATE $phones SET customer_id=NULL,is_primary=0,auto_match_blocked=1 WHERE customer_id=%d AND source NOT IN ('manual','manual_invoice_bundle') AND normalized_phone NOT IN ($desired_placeholders)",
                 $customer_id,
                 ...$desired_phones
             ));
         } else {
-            $wpdb->query($wpdb->prepare(
+            Biawin_CRM_DB::write('query', $wpdb->prepare(
                 "UPDATE $phones SET customer_id=NULL,is_primary=0,auto_match_blocked=1 WHERE customer_id=%d AND source NOT IN ('manual','manual_invoice_bundle')",
                 $customer_id
             ));
@@ -3386,7 +3386,7 @@ class Biawin_CRM_Admin
             $existing = $wpdb->get_row($wpdb->prepare("SELECT * FROM $phones WHERE normalized_phone=%s LIMIT 1", $phone));
             $is_primary = $index === 0 ? 1 : 0;
             if ($existing) {
-                $wpdb->update($phones, [
+                Biawin_CRM_DB::write('update', $phones, [
                     'customer_id'=>$customer_id,
                     'raw_phone'=>$phone,
                     'phone_status'=>($existing->phone_status ?: 'unverified'),
@@ -3396,7 +3396,7 @@ class Biawin_CRM_Admin
                     'auto_match_blocked'=>0,
                 ], ['id'=>(int)$existing->id]);
             } else {
-                $wpdb->insert($phones, [
+                Biawin_CRM_DB::write('insert', $phones, [
                     'customer_id'=>$customer_id,
                     'raw_phone'=>$phone,
                     'normalized_phone'=>$phone,
@@ -3704,7 +3704,7 @@ class Biawin_CRM_Admin
                 continue;
             }
             if ($execute) {
-                $updated = $wpdb->update($invoices, [
+                $updated = Biawin_CRM_DB::write('update', $invoices, [
                     'exclude_from_total'=>1,
                     'excluded_amount'=>(float)$invoice->amount_paid,
                     'excluded_reason'=>'bulk_unapproved_invoice_cleanup',
@@ -3801,7 +3801,7 @@ class Biawin_CRM_Admin
     private static function delete_single_unapproved_invoice_profile(int $customer_id, int $invoice_id, string $source_customer_id, float $amount): bool
     {
         global $wpdb;
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         $invoice_items = Biawin_CRM_DB::table('invoice_items');
         $invoice_phones = Biawin_CRM_DB::table('invoice_phones');
         $payments = Biawin_CRM_DB::table('payments');
@@ -3809,15 +3809,15 @@ class Biawin_CRM_Admin
         $phones = Biawin_CRM_DB::table('phones');
         $services = Biawin_CRM_DB::table('services');
         $customers = Biawin_CRM_DB::table('customers');
-        $ok = $wpdb->delete($invoice_items, ['invoice_id'=>$invoice_id]) !== false
-            && $wpdb->delete($invoice_phones, ['invoice_id'=>$invoice_id]) !== false
-            && $wpdb->delete($payments, ['invoice_id'=>$invoice_id]) !== false
-            && $wpdb->delete($invoices, ['id'=>$invoice_id]) !== false
-            && $wpdb->delete($phones, ['customer_id'=>$customer_id]) !== false
-            && $wpdb->delete($services, ['customer_id'=>$customer_id]) !== false
-            && $wpdb->delete($customers, ['id'=>$customer_id]) !== false;
-        if (!$ok) { $wpdb->query('ROLLBACK'); return false; }
-        $wpdb->query('COMMIT');
+        $ok = Biawin_CRM_DB::write('delete', $invoice_items, ['invoice_id'=>$invoice_id]) !== false
+            && Biawin_CRM_DB::write('delete', $invoice_phones, ['invoice_id'=>$invoice_id]) !== false
+            && Biawin_CRM_DB::write('delete', $payments, ['invoice_id'=>$invoice_id]) !== false
+            && Biawin_CRM_DB::write('delete', $invoices, ['id'=>$invoice_id]) !== false
+            && Biawin_CRM_DB::write('delete', $phones, ['customer_id'=>$customer_id]) !== false
+            && Biawin_CRM_DB::write('delete', $services, ['customer_id'=>$customer_id]) !== false
+            && Biawin_CRM_DB::write('delete', $customers, ['id'=>$customer_id]) !== false;
+        if (!$ok) { Biawin_CRM_DB::write('query', 'ROLLBACK'); return false; }
+        Biawin_CRM_DB::write('query', 'COMMIT');
         Biawin_CRM_DB::log('customer', $customer_id, 'single_unapproved_invoice_profile_deleted', null, ['source_customer_id'=>$source_customer_id,'invoice_id'=>$invoice_id,'amount'=>$amount,'deleted_by'=>get_current_user_id()]);
         return true;
     }

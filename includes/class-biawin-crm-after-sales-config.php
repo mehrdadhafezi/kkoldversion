@@ -364,7 +364,7 @@ class Biawin_CRM_After_Sales_Config
             'complaint_id' => $complaint_id, 'unit_id' => $unit_id, 'unit_name_snapshot' => (string)$unit->unit_name,
             'mode' => $mode, 'created_by' => get_current_user_id() ?: null, 'created_at' => $now, 'updated_at' => $now,
         ], $fields);
-        if ($wpdb->insert(Biawin_CRM_DB::table('complaint_inquiries'), $row) === false) return ['ok' => false, 'message' => 'ثبت استعلام انجام نشد: ' . ($wpdb->last_error ?: 'خطای دیتابیس')];
+        if (Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('complaint_inquiries'), $row) === false) return ['ok' => false, 'message' => 'ثبت استعلام انجام نشد: ' . ($wpdb->last_error ?: 'خطای دیتابیس')];
         $id = (int)$wpdb->insert_id;
         Biawin_CRM_DB::log('complaint', $complaint_id, 'complaint_inquiry_' . $mode, null, ['inquiry_id' => $id, 'unit_id' => $unit_id, 'unit_key' => $unit->unit_key, 'status' => $row['status']]);
         return ['ok' => true, 'id' => $id];

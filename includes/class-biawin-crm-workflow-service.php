@@ -128,7 +128,7 @@ class Biawin_CRM_Workflow_Service
         ));
         $remaining = $credit_total - $reserved - $consumed;
 
-        $updated = $wpdb->update(Biawin_CRM_DB::table('customers'), [
+        $updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'), [
             'profile_completeness' => $profile,
             'service_credit_total' => $credit_total,
             'service_credit_reserved' => $reserved,
@@ -144,6 +144,11 @@ class Biawin_CRM_Workflow_Service
         } elseif ($profile === self::PROFILE_COMPLETE) {
             if (!self::close_open_financial_cases($customer_id)) return false;
         }
+        if ($profile === self::PROFILE_COMPLETE && class_exists('Biawin_CRM_Ownership_Lock_Service') &&
+            version_compare((string)get_option('biawin_crm_db_version',''),'0.8.65.19','>=') &&
+            !Biawin_CRM_Ownership_Transfer_Service::permits_customer($customer_id)) {
+            Biawin_CRM_Ownership_Lock_Service::sync_completed($customer_id);
+        }
         return true;
     }
 
@@ -156,7 +161,7 @@ class Biawin_CRM_Workflow_Service
             $customer_id
         ));
         if ($existing) {
-            $updated = $wpdb->update($table, [
+            $updated = Biawin_CRM_DB::write('update', $table, [
                 'declared_amount' => $declared,
                 'system_amount' => $system_total,
                 'difference_amount' => ($declared === null || $system_total === null) ? null : $declared - $system_total,
@@ -182,7 +187,7 @@ class Biawin_CRM_Workflow_Service
     private static function close_open_financial_cases(int $customer_id): bool
     {
         global $wpdb;
-        $result = $wpdb->query($wpdb->prepare(
+        $result = Biawin_CRM_DB::write('query', $wpdb->prepare(
             "UPDATE " . Biawin_CRM_DB::table('financial_cases') . " SET status='resolved', resolved_by=%d, resolved_at=%s, updated_at=%s WHERE customer_id=%d AND status NOT IN ('resolved','closed','cancelled')",
             get_current_user_id() ?: 0,
             Biawin_CRM_DB::now(),
@@ -217,7 +222,7 @@ class Biawin_CRM_Workflow_Service
                 return ['ok' => false, 'message' => 'مسیر انتخاب شدنی است اما ایجاد پرونده تأیید مالی ناموفق بود؛ دوباره تلاش کنید.'];
             }
         }
-        $updated = $wpdb->update(Biawin_CRM_DB::table('customers'), [
+        $updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'), [
             'journey_state' => $journey,
             'satisfaction_state' => sanitize_key($satisfaction),
             'updated_at' => Biawin_CRM_DB::now(),
@@ -270,14 +275,14 @@ class Biawin_CRM_Workflow_Service
             'created_at' => Biawin_CRM_DB::now(),
         ];
         if ($subject_id) $row['subject_id'] = $subject_id;
-        $inserted = $wpdb->insert(Biawin_CRM_DB::table('complaints'), $row);
+        $inserted = Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('complaints'), $row);
         $id = (int) $wpdb->insert_id;
         if ($inserted === false || !$id) {
             return ['ok' => false, 'message' => 'ثبت شکایت در دیتابیس انجام نشد.'];
         }
         $route = self::set_customer_journey($customer_id, 'complaint', '', 'شکایت مشتری ثبت شد.');
         if (empty($route['ok'])) {
-            $wpdb->delete(Biawin_CRM_DB::table('complaints'), ['id' => $id]);
+            Biawin_CRM_DB::write('delete', Biawin_CRM_DB::table('complaints'), ['id' => $id]);
             return $route;
         }
         self::activity($customer_id, 'complaint_created', 'شکایت جدید ثبت شد.', 'complaint', $id);
@@ -337,7 +342,7 @@ class Biawin_CRM_Workflow_Service
             if ($configured && !(int)$configured->is_active) return ['ok' => false, 'message' => 'این نتیجه غیرفعال شده است.'];
         }
 
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             $complaint = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . Biawin_CRM_DB::table('complaints') . ' WHERE id=%d FOR UPDATE', $complaint_id));
             if (!$complaint) throw new RuntimeException('شکایت پیدا نشد.');
@@ -351,7 +356,7 @@ class Biawin_CRM_Workflow_Service
             }
             if (empty($next['ok'])) throw new RuntimeException($next['message'] ?? 'ثبت نتیجه شکایت انجام نشد.');
 
-            $updated = $wpdb->update(Biawin_CRM_DB::table('complaints'), [
+            $updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('complaints'), [
                 'resolution' => sanitize_textarea_field($note),
                 'resolution_outcome' => $outcome,
                 'status' => 'closed',
@@ -360,10 +365,10 @@ class Biawin_CRM_Workflow_Service
             if ($updated === false) throw new RuntimeException('ذخیره نتیجه شکایت در دیتابیس انجام نشد.');
 
             self::activity((int)$complaint->customer_id, 'complaint_resolved', 'شکایت تعیین تکلیف شد.', 'complaint', $complaint_id, ['outcome'=>$outcome]);
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             return ['ok'=>true];
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>$e->getMessage() ?: 'ثبت نتیجه شکایت انجام نشد.'];
         }
     }
@@ -383,9 +388,9 @@ class Biawin_CRM_Workflow_Service
             'updated_at' => Biawin_CRM_DB::now(),
         ]);
         if (!$id) return ['ok'=>false,'message'=>'ثبت پرونده عودت در دیتابیس انجام نشد.'];
-        $updated = $wpdb->update(Biawin_CRM_DB::table('customers'), ['journey_state' => 'refund', 'updated_at' => Biawin_CRM_DB::now()], ['id' => $customer_id]);
+        $updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'), ['journey_state' => 'refund', 'updated_at' => Biawin_CRM_DB::now()], ['id' => $customer_id]);
         if ($updated === false) {
-            $wpdb->delete($table, ['id'=>$id]);
+            Biawin_CRM_DB::write('delete', $table, ['id'=>$id]);
             return ['ok'=>false,'message'=>'مسیر عودت روی پروفایل مشتری ذخیره نشد.'];
         }
         self::activity($customer_id, 'refund_created', 'پرونده عودت وجه ایجاد شد.', 'refund', $id);
@@ -404,17 +409,17 @@ class Biawin_CRM_Workflow_Service
         $service_ids = array_values(array_unique(array_filter(array_map('absint', $service_ids))));
         if (!$service_ids) return ['ok'=>false,'message'=>'حداقل یک خدمت انتخاب کنید.'];
 
-        $wpdb->query('START TRANSACTION');
+        Biawin_CRM_DB::write('query', 'START TRANSACTION');
         try {
             if (!self::sync_customer($customer_id)) throw new RuntimeException('customer sync failed');
             $customer = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . Biawin_CRM_DB::table('customers') . ' WHERE id=%d FOR UPDATE', $customer_id));
             if (!$customer) {
-                $wpdb->query('ROLLBACK'); return ['ok'=>false,'message'=>'پروفایل مشتری پیدا نشد.'];
+                Biawin_CRM_DB::write('query', 'ROLLBACK'); return ['ok'=>false,'message'=>'پروفایل مشتری پیدا نشد.'];
             }
             $placeholders = implode(',', array_fill(0, count($service_ids), '%d'));
             $services = $wpdb->get_results($wpdb->prepare("SELECT * FROM " . Biawin_CRM_DB::table('service_catalog') . " WHERE id IN ($placeholders) AND is_active=1", $service_ids));
             if (count($services) !== count($service_ids)) {
-                $wpdb->query('ROLLBACK'); return ['ok'=>false,'message'=>'یک یا چند خدمت معتبر یا فعال نیست.'];
+                Biawin_CRM_DB::write('query', 'ROLLBACK'); return ['ok'=>false,'message'=>'یک یا چند خدمت معتبر یا فعال نیست.'];
             }
             $existing_ids = $wpdb->get_col($wpdb->prepare(
                 "SELECT service_id FROM " . Biawin_CRM_DB::table('service_cases') . " WHERE customer_id=%d AND service_id IN ($placeholders) AND status NOT IN ('rejected','cancelled')",
@@ -428,10 +433,10 @@ class Biawin_CRM_Workflow_Service
                         "SELECT id FROM " . Biawin_CRM_DB::table('service_cases') . " WHERE customer_id=%d AND service_id IN ($placeholders) AND status NOT IN ('rejected','cancelled') ORDER BY id",
                         array_merge([$customer_id], $service_ids)
                     ));
-                    $wpdb->query('COMMIT');
+                    Biawin_CRM_DB::write('query', 'COMMIT');
                     return ['ok'=>true,'case_ids'=>array_map('intval',(array)$case_ids),'message'=>'درخواست خدمات قبلاً ثبت شده بود؛ همان پرونده‌های موجود نمایش داده می‌شوند.','already_exists'=>true];
                 }
-                $wpdb->query('ROLLBACK'); return ['ok'=>false,'message'=>'بخشی از خدمات انتخابی قبلاً پرونده فعال دارند. موارد تکراری را از انتخاب خارج کنید.'];
+                Biawin_CRM_DB::write('query', 'ROLLBACK'); return ['ok'=>false,'message'=>'بخشی از خدمات انتخابی قبلاً پرونده فعال دارند. موارد تکراری را از انتخاب خارج کنید.'];
             }
             $reserved = (float)$wpdb->get_var($wpdb->prepare("SELECT COALESCE(SUM(credit_amount),0) FROM ".Biawin_CRM_DB::table('service_cases')." WHERE customer_id=%d AND status IN ('unassigned','assigned','in_progress','waiting')",$customer_id));
             $consumed = (float)$wpdb->get_var($wpdb->prepare("SELECT COALESCE(SUM(credit_amount),0) FROM ".Biawin_CRM_DB::table('service_cases')." WHERE customer_id=%d AND status='completed'",$customer_id));
@@ -450,14 +455,14 @@ class Biawin_CRM_Workflow_Service
                 $created[]=$case_id;
                 self::activity($customer_id,'service_case_created','درخواست خدمت «'.$service->name.'» ایجاد شد.','service_case',$case_id,['service_id'=>(int)$service->id]);
             }
-            $journey_updated = $wpdb->update(Biawin_CRM_DB::table('customers'),['journey_state'=>'service_request','updated_at'=>Biawin_CRM_DB::now()],['id'=>$customer_id]);
+            $journey_updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('customers'),['journey_state'=>'service_request','updated_at'=>Biawin_CRM_DB::now()],['id'=>$customer_id]);
             if ($journey_updated === false) throw new RuntimeException('customer journey update failed');
-            $wpdb->query('COMMIT');
+            Biawin_CRM_DB::write('query', 'COMMIT');
             self::sync_customer($customer_id);
             self::activity($customer_id,'journey_changed','خدمات مشتری انتخاب و پرونده‌های تخصصی ساخته شد.','customer',$customer_id,['journey'=>'service_request']);
             return ['ok'=>true,'case_ids'=>$created];
         } catch (Throwable $e) {
-            $wpdb->query('ROLLBACK');
+            Biawin_CRM_DB::write('query', 'ROLLBACK');
             return ['ok'=>false,'message'=>'ایجاد پرونده‌های خدمات انجام نشد.'];
         }
     }
@@ -504,7 +509,7 @@ class Biawin_CRM_Workflow_Service
         if (!$agent || !$agent->has_cap('bcrm_services') || (bool)get_user_meta($agent_user_id, 'bcrm_disabled', true) || !in_array($agent_user_id,$allowed_ids,true)) {
             return ['ok' => false, 'message' => 'کارشناس انتخاب‌شده عضو فعال این واحد خدمات نیست.'];
         }
-        $updated = $wpdb->update(Biawin_CRM_DB::table('service_cases'), [
+        $updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('service_cases'), [
             'assigned_user_id' => $agent_user_id,
             'assigned_by' => get_current_user_id(),
             'assigned_at' => Biawin_CRM_DB::now(),
@@ -532,7 +537,7 @@ class Biawin_CRM_Workflow_Service
         }
         $data = ['status' => $status, 'note' => sanitize_textarea_field($note), 'updated_at' => Biawin_CRM_DB::now()];
         $data['closed_at'] = in_array($status, ['completed','rejected','cancelled'], true) ? Biawin_CRM_DB::now() : null;
-        $updated = $wpdb->update(Biawin_CRM_DB::table('service_cases'), $data, ['id' => $case_id]);
+        $updated = Biawin_CRM_DB::write('update', Biawin_CRM_DB::table('service_cases'), $data, ['id' => $case_id]);
         if ($updated === false) return ['ok' => false, 'message' => 'وضعیت خدمت در دیتابیس ذخیره نشد.'];
         self::activity((int) $case->customer_id, 'service_case_status', 'وضعیت پرونده خدمت تغییر کرد.', 'service_case', $case_id, ['status' => $status, 'note' => $note]);
         self::sync_customer((int) $case->customer_id);
@@ -552,7 +557,7 @@ class Biawin_CRM_Workflow_Service
     public static function activity(int $customer_id, string $type, string $title, string $object_type = 'customer', ?int $object_id = null, array $meta = []): void
     {
         global $wpdb;
-        $wpdb->insert(Biawin_CRM_DB::table('activities'), [
+        Biawin_CRM_DB::write('insert', Biawin_CRM_DB::table('activities'), [
             'customer_id' => $customer_id,
             'actor_user_id' => get_current_user_id() ?: null,
             'activity_type' => sanitize_key($type),
@@ -569,7 +574,7 @@ class Biawin_CRM_Workflow_Service
         global $wpdb;
         for ($attempt=0; $attempt<6; $attempt++) {
             $data[$code_field] = self::next_case_code($prefix, $table);
-            $ok = $wpdb->insert($table, $data);
+            $ok = Biawin_CRM_DB::write('insert', $table, $data);
             if ($ok !== false && (int)$wpdb->insert_id > 0) return (int)$wpdb->insert_id;
             usleep(10000 + ($attempt * 5000));
         }

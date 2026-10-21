@@ -1,3 +1,11 @@
+## 0.8.65.19 — Ownership Reconciliation backend
+
+- Add backend claim/review/decision/transfer commands, scoped authorization, risk and second approval.
+- Add global held-profile write protection and persistent ownership locks at legacy write boundaries.
+- Preserve invoice-phone history and invoice-linked services; checkpoint post-transfer recovery.
+- Add case snapshot/execution metadata and a pluggable disputed-phone OTP delivery adapter.
+- No ownership UI or global historical backfill.
+
 ## 0.8.65.18 — Ownership Reconciliation C1
 
 - Add seven ownership foundation tables and four nullable canonical invoice-phone columns.
