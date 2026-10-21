@@ -11,11 +11,11 @@ import subprocess
 
 C2 = "38779e8f5fa02e3544f0d3a51263aca2416b83b2"
 UI_PHP = ["includes/class-biawin-crm-ownership-presenter.php", "includes/class-biawin-crm-ownership-ajax.php", "includes/class-biawin-crm-ownership-ui.php", "includes/class-biawin-crm-ownership-legacy-bridge.php"]
-UI_ASSETS = ["ownership-ui/ownership.js", "ownership-ui/ownership.css"]
+UI_ASSETS = ["ownership-ui/ownership.js", "ownership-ui/ownership.css", "portal-ui/portal.js", "portal-ui/portal.css"]
 
 changed = subprocess.check_output(["git", "diff", "--name-only", C2, "--"], text=True).split()
 changed += subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], text=True).split()
-allowed = set(UI_PHP + UI_ASSETS + ["biawin-crm-integration.php", "CHANGELOG.md", "STRUCTURE.md", "docs/OWNERSHIP-RECONCILIATION-C3-UI.md", "tests/ownership-c3-ui.php", "tests/ownership-c3-static.py", "tests/ownership-c3-legacy-bridge.php", "tests/ownership-c3-final-plan.php",
+allowed = set(UI_PHP + UI_ASSETS + ["includes/class-biawin-crm-portal-ui.php", "docs/PORTAL-UI-UX-REVIEW-C3-11.md", "tests/browser/portal-review.js", "biawin-crm-integration.php", "CHANGELOG.md", "STRUCTURE.md", "docs/OWNERSHIP-RECONCILIATION-C3-UI.md", "tests/ownership-c3-ui.php", "tests/ownership-c3-static.py", "tests/ownership-c3-legacy-bridge.php", "tests/ownership-c3-final-plan.php",
     "tests/browser/bootstrap.php", "tests/browser/seed.php", "tests/browser/router.php", "tests/browser/ownership-flows.js", "tests/browser/run.sh"])
 unexpected = sorted(set(changed) - allowed)
 assert not unexpected, "C3 changed files outside the UI layer: %s" % unexpected
@@ -24,7 +24,7 @@ print("PASS: only C3 UI/adapter/doc/test files differ from the approved C2 check
 boot = subprocess.check_output(["git", "diff", C2, "--", "biawin-crm-integration.php"], text=True)
 for line in boot.splitlines():
     if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
-        assert line.startswith("+") and ("ownership" in line or "Ownership" in line), "bootstrap change beyond C3 registration: " + line
+        assert line.startswith("+") and any(k in line for k in ("ownership", "Ownership", "portal-ui", "Portal_UI")), "bootstrap change beyond C3 registration: " + line
 assert "define('BIAWIN_CRM_VERSION', '0.8.65.19');" in Path("biawin-crm-integration.php").read_text(encoding="utf-8")
 print("PASS: bootstrap only registers the C3 classes; plugin version remains 0.8.65.19")
 
@@ -89,3 +89,12 @@ js = Path("ownership-ui/ownership.js").read_text(encoding="utf-8")
 assert 'data-own-mode-field="USE_TARGET_PROFILE_PHONE"' in ui and 'data-own-mode-field="PROPOSE_NEW_PHONE"' in ui
 assert "function normalizePlanPayload(" in js and 'normalizePlanPayload(form, data)' in js
 print("PASS: C3.10 final-plan fields gated by mode and payload normalized in ownership.js")
+
+# ---- C3.11: portal skin is presentation-only
+portal_php = Path("includes/class-biawin-crm-portal-ui.php").read_text(encoding="utf-8")
+assert "wp_enqueue_style" in portal_php and not re.search(r"\$wpdb|Biawin_CRM_DB::|Repository::|Workflow::", portal_php), "portal UI class must only enqueue assets"
+pjs = Path("portal-ui/portal.js").read_text(encoding="utf-8")
+assert "fetch(" not in pjs and "XMLHttpRequest" not in pjs, "portal.js must not call the server"
+result = subprocess.run(["node", "--check", "portal-ui/portal.js"], capture_output=True, text=True)
+assert result.returncode == 0, result.stderr
+print("PASS: C3.11 portal skin only enqueues assets; portal.js makes no server calls; JS syntax valid")

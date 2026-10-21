@@ -10,16 +10,23 @@ $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 if ($path !== '/' && is_file(dirname(__DIR__, 2) . $path)) return false; // static assets from the repository
 
 require __DIR__ . '/bootstrap.php';
+// Full plugin (all modules + frozen admin pages) so every portal view renders as in WordPress.
+foreach (glob(BIAWIN_CRM_DIR . 'includes/class-biawin-crm-*.php') as $file) if (basename($file) !== 'class-biawin-crm-auth.php') require_once $file;
+require_once BIAWIN_CRM_DIR . 'admin/class-biawin-crm-admin.php';
 
 function page_head(string $title): string {
-    $css = '';
-    foreach (['assets/frontend.css', 'assets/admin.css', 'assets/portal-fixes.css'] as $file) $css .= '<link rel="stylesheet" href="/' . $file . '">';
-    return '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . esc_html($title) . '</title>' . $css;
+    return '<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . esc_html($title) . '</title>';
+}
+/** Real front-end enqueue chain, in WordPress order (frozen portal assets first, then additive layers). */
+function portal_assets(): void {
+    Biawin_CRM_Frontend::assets();
+    Biawin_CRM_Ownership_UI::front_assets();
+    if (class_exists('Biawin_CRM_Portal_UI')) Biawin_CRM_Portal_UI::front_assets();
 }
 function enqueued_tags(): string {
     global $enqueued;
     $html = '';
-    foreach ($enqueued['styles'] as $src) $html .= '<link rel="stylesheet" href="' . esc_url($src) . '">';
+    foreach ($enqueued['styles'] as $handle => $src) { $html .= '<link rel="stylesheet" href="' . esc_url($src) . '">'; if (!empty($enqueued['inline'][$handle])) $html .= '<style>' . $enqueued['inline'][$handle] . '</style>'; }
     $scripts = '';
     foreach ($enqueued['data'] as $name => $data) $scripts .= '<script>window.' . $name . '=' . json_encode($data, JSON_UNESCAPED_UNICODE) . ';</script>';
     foreach ($enqueued['scripts'] as $src) $scripts .= '<script src="' . esc_url($src) . '"></script>';
@@ -29,19 +36,18 @@ function enqueued_tags(): string {
 switch ($path) {
     case '/portal':
         if (!is_user_logged_in()) { echo page_head('ورود') . '</head><body><p data-login>برای ورود، کاربر آزمون را انتخاب کنید.</p></body></html>'; exit; }
-        Biawin_CRM_Ownership_UI::front_assets();
+        portal_assets();
         $_GET['bcrm_view'] = $_GET['bcrm_view'] ?? 'ownership';
+        // do_shortcode_tag order: pre_do_shortcode_tag (ownership view) else the frozen portal + nav filter.
         $html = Biawin_CRM_Ownership_UI::portal_intercept(false, 'biawin_crm_portal');
-        if ($html === false) $html = '<div class="bcrm-portal" dir="rtl"><p>این نما در محیط آزمون پشتیبانی نمی‌شود.</p></div>';
+        if ($html === false) $html = Biawin_CRM_Ownership_UI::portal_nav(Biawin_CRM_Frontend::portal(), 'biawin_crm_portal');
         if (!wp_script_is_ownership()) $html .= '<script>window.BCRM_OWN=null;</script>';
         echo page_head('تطبیق مالکیت') . str_replace('%BODY%', $html, enqueued_tags()) . '</body></html>';
         exit;
     case '/legacy':
         // Legacy profile Attach panel exactly as the frozen frontend renders it, driven by the frozen assets/frontend.js.
         $customer = absint($_GET['customer'] ?? 0);
-        Biawin_CRM_Ownership_UI::front_assets();
-        $enqueued['data']['BiawinCRM'] = ['ajaxUrl' => '/ajax', 'nonce' => wp_create_nonce('bcrm_front_ajax'), 'currency' => 'تومان', 'portalUrl' => '/portal', 'canManageCustomerPhones' => 0, 'maxFileUploads' => 20];
-        $enqueued['scripts'] = ['biawin-crm-frontend' => '/assets/frontend.js'] + $enqueued['scripts'];
+        portal_assets();
         $panel = new ReflectionMethod('Biawin_CRM_Frontend', 'render_search_and_attach');
         $panel->setAccessible(true);
         ob_start(); $panel->invoke(null, $customer); $markup = (string)ob_get_clean();

@@ -20,13 +20,13 @@ $uid = (int)($_COOKIE['bcrm_uid'] ?? 0);
 $current_hook = '';
 $enqueued = ['styles' => [], 'scripts' => [], 'data' => []];
 $options = ['biawin_crm_db_version' => BIAWIN_CRM_VERSION];
-$USERS = [1 => 'درخواست‌دهنده (کارشناس پروفایل)', 2 => 'کارشناس تطبیق الف', 3 => 'سرپرست تطبیق الف', 4 => 'کارشناس تطبیق ب', 5 => 'سرپرست تطبیق ب', 6 => 'کاربر پرتال بدون دسترسی تطبیق', 7 => 'مدیر سیستم'];
+$USERS = [1 => 'درخواست‌دهنده (کارشناس پروفایل)', 2 => 'کارشناس تطبیق الف', 3 => 'سرپرست تطبیق الف', 4 => 'کارشناس تطبیق ب', 5 => 'سرپرست تطبیق ب', 6 => 'کاربر پرتال بدون دسترسی تطبیق', 7 => 'مدیر سیستم', 8 => 'مدیر کل (بازبینی کل پرتال)'];
 
 // ------------------------------------------------------------------ WordPress doubles
 function get_current_user_id() { global $uid; return $uid; }
 function is_user_logged_in() { return get_current_user_id() > 0; }
 function current_user_can($cap, ...$args) { global $uid; return user_can($uid, $cap); }
-function user_can($id, $cap) { $caps = bcrm_caps(); return in_array($cap, $caps[(int)$id] ?? [], true); }
+function user_can($id, $cap) { if ((int)$id === 8) return true; /* portal-inventory user: every module visible */ $caps = bcrm_caps(); return in_array($cap, $caps[(int)$id] ?? [], true); }
 function bcrm_caps(): array {
     static $caps = null;
     if ($caps === null) {
@@ -45,9 +45,9 @@ function bcrm_caps(): array {
 }
 function get_userdata($id) { global $USERS; return isset($USERS[(int)$id]) ? (object)['ID' => (int)$id, 'display_name' => $USERS[(int)$id]] : false; }
 function wp_get_current_user() { global $uid, $USERS; return new WP_User($uid, $USERS[$uid] ?? ''); }
-class WP_User { public $ID, $display_name, $roles = []; function __construct($id, $name) { $this->ID = $id; $this->display_name = $name; } function has_cap($cap) { return user_can($this->ID, $cap); } }
+class WP_User { public $ID, $display_name, $user_login = '', $user_email = '', $roles = []; function __construct($id, $name) { $this->ID = $id; $this->display_name = $name; } function has_cap($cap) { return user_can($this->ID, $cap); } }
 function get_user_by($field, $id) { global $USERS; return isset($USERS[(int)$id]) ? new WP_User((int)$id, $USERS[(int)$id]) : false; }
-function get_users($args = []) { global $USERS; $out = []; foreach ($USERS as $id => $name) $out[] = (object)['ID' => $id, 'display_name' => $name]; return $out; }
+function get_users($args = []) { global $USERS; $out = []; foreach ($USERS as $id => $name) { $u = new WP_User($id, $name); $u->user_login = 'user' . $id; $u->user_email = 'user' . $id . '@example.test'; $out[] = $u; } return $out; }
 function get_user_meta($id, $key, $single = false) { return false; }
 function get_option($name, $default = false) { global $options; return $options[$name] ?? $default; }
 function current_time($type) { return $type === 'timestamp' ? time() : gmdate('Y-m-d H:i:s'); }
@@ -67,7 +67,11 @@ function esc_textarea($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF
 function esc_url($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function esc_html__($s) { return esc_html($s); }
 function __($s) { return $s; }
-function add_query_arg($args, $url = '') { $parts = parse_url($url); parse_str($parts['query'] ?? '', $q); $q = array_merge($q, $args); return ($parts['path'] ?? '/') . '?' . http_build_query($q); }
+function add_query_arg(...$a) {
+    if (is_array($a[0])) { $args = $a[0]; $url = $a[1] ?? ($_SERVER['REQUEST_URI'] ?? '/'); } else { $args = [$a[0] => $a[1] ?? '']; $url = $a[2] ?? ($_SERVER['REQUEST_URI'] ?? '/'); }
+    $parts = parse_url((string)$url); parse_str($parts['query'] ?? '', $q); $q = array_merge($q, $args);
+    return ($parts['path'] ?? '/') . '?' . http_build_query($q);
+}
 function admin_url($p = '') { return $p === 'admin-ajax.php' ? '/ajax' : '/wp-admin/' . $p; }
 function home_url($p = '') { return $p; }
 function is_admin() { return false; }
@@ -89,12 +93,35 @@ function apply_filters($name, $value, ...$args) {
     return $value;
 }
 function do_action(...$a) {}
+function wp_nonce_url($url, $action = -1, $name = '_wpnonce') { return add_query_arg([$name => 'nonce-' . $action], $url); }
+function get_transient($k) { return false; }
+function set_transient(...$a) { return true; }
+function delete_transient($k) { return true; }
+function remove_query_arg($keys, $url = '') { $url = $url ?: ($_SERVER['REQUEST_URI'] ?? '/'); $parts = parse_url($url); parse_str($parts['query'] ?? '', $q); foreach ((array)$keys as $k) unset($q[$k]); return ($parts['path'] ?? '/') . ($q ? '?' . http_build_query($q) : ''); }
+function site_url($p = '') { return $p; }
+function get_permalink($id = 0) { return '/portal'; }
+function wp_kses_post($s) { return $s; }
+function wp_strip_all_tags($s) { return strip_tags((string)$s); }
+function size_format($b) { return number_format((float)$b) . ' B'; }
+function wp_max_upload_size() { return 8388608; }
+function update_option(...$a) { return true; }
+function get_role($r) { return null; }
+function wp_roles() { return (object)['roles' => [], 'role_names' => []]; }
+function wp_safe_redirect(...$a) { return true; }
+function submit_button($text = 'ذخیره', $type = 'primary', $name = 'submit', $wrap = true) { echo '<p class="submit"><button type="submit" class="button button-' . esc_attr($type) . '" name="' . esc_attr($name) . '">' . esc_html($text) . '</button></p>'; }
+function wp_kses($s) { return $s; }
+function wp_generate_password($len = 12, $special = true, $extra = false) { return substr(bin2hex(random_bytes(32)), 0, $len); }
+function wp_upload_dir() { return ['basedir' => BCRM_RUNTIME . '/media', 'baseurl' => '/media', 'path' => BCRM_RUNTIME . '/media', 'url' => '/media', 'error' => false]; }
+function wp_mkdir_p($d) { return is_dir($d) || mkdir($d, 0777, true); }
+function wp_doing_ajax() { return false; }
+function disabled($a, $b = true, $echo = true) { return (string)$a === (string)$b ? ' disabled="disabled"' : ''; }
+function readonly_attr($a, $b = true) { return (string)$a === (string)$b ? ' readonly' : ''; }
 function add_action(...$a) {}
 function add_filter(...$a) {}
 function wp_enqueue_style($h, $src = '', $deps = [], $ver = false) { global $enqueued; $enqueued['styles'][$h] = $src; }
 function wp_enqueue_script($h, $src = '', $deps = [], $ver = false, $footer = false) { global $enqueued; $enqueued['scripts'][$h] = $src; }
 function wp_localize_script($h, $name, $data) { global $enqueued; $enqueued['data'][$name] = $data; }
-function wp_add_inline_style(...$a) {}
+function wp_add_inline_style($h, $css) { global $enqueued; $enqueued['inline'][$h] = ($enqueued['inline'][$h] ?? '') . $css; }
 function get_post($id) { $m = bcrm_media((int)$id); return $m ? (object)['ID' => (int)$id, 'post_type' => 'attachment', 'post_author' => $m['author']] : null; }
 function get_attached_file($id) { $m = bcrm_media((int)$id); return $m ? $m['path'] : ''; }
 function get_post_mime_type($id) { $m = bcrm_media((int)$id); return $m ? $m['mime'] : ''; }
@@ -127,6 +154,7 @@ function wp_delete_attachment($id, $force = false) { $r = bcrm_media_registry();
 
 // ------------------------------------------------------------------ file-backed SQL double (same SQL translation as tests/ownership-c2.php)
 class BrowserSQL {
+    public $users = 'test_users', $usermeta = 'test_usermeta', $posts = 'test_posts', $postmeta = 'test_postmeta';
     public $prefix = 'test_', $dbname = 'browser_double', $last_error = '', $insert_id = 0, $rows_affected = 0, $num_rows = 0, $last_query = '', $last_result = [];
     public $pdo;
     private $suppressed = false;

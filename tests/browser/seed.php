@@ -49,6 +49,11 @@ function invoice(int $customer, string $code, float $amount, string $phone, stri
 function lock(int $invoice, int $owner): void { Biawin_CRM_Ownership_Repository::atomic(static function () use ($invoice, $owner) { Biawin_CRM_Ownership_Lock_Service::create('INVOICE', $invoice, $owner); }); }
 
 seed_schema();
+$wpdb->query('CREATE TABLE test_users (ID INTEGER PRIMARY KEY, user_login TEXT, user_email TEXT, display_name TEXT, user_registered TEXT)');
+$wpdb->query('CREATE TABLE test_posts (ID INTEGER PRIMARY KEY, post_title TEXT, post_type TEXT, post_mime_type TEXT, post_author INTEGER, guid TEXT)');
+$wpdb->query('CREATE TABLE test_postmeta (meta_id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, meta_key TEXT, meta_value TEXT)');
+$wpdb->query('CREATE TABLE test_usermeta (umeta_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, meta_key TEXT, meta_value TEXT)');
+foreach ($USERS as $id => $name) $wpdb->insert('test_users', ['ID' => $id, 'user_login' => 'user' . $id, 'user_email' => 'user' . $id . '@example.test', 'display_name' => $name, 'user_registered' => gmdate('Y-m-d H:i:s')]);
 $uid = 0;
 $fixture = [];
 $pairs = [
