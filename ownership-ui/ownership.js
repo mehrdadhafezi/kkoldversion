@@ -112,7 +112,7 @@
     }
     function planChanged(form) {
         var mode = qs('input[name="phone_resolution"]:checked', form);
-        return (qs('[name="action"]', form).value !== form.dataset.reqAction) ||
+        return (qs('[name="final_action"]', form).value !== form.dataset.reqAction) ||
             ((mode ? mode.value : "") !== form.dataset.reqMode) ||
             (String(Number(qs('[name="phone_id"]', form).value || 0)) !== String(Number(form.dataset.reqPid || 0))) ||
             ((qs('[name="phone"]', form).value || "").trim() !== (form.dataset.reqPhone || ""));

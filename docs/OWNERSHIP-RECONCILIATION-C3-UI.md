@@ -179,3 +179,57 @@ The wizard shows the source and claimant cards and highlights the suggested asse
 - unlocked Attach on an incomplete profile is unchanged;
 - admin-post Attach form;
 - users without ownership capabilities (controlled message, no CTA).
+
+## 12. C3.9 — UI completion and automated flow acceptance
+
+**UI completion** (no backend, schema, state-machine or frozen-file change):
+
+- **Request wizard: six explicit steps.** The steps are: source → claimant → asset → phone resolution → reason → final review.
+  - Each step shows a progress indicator, its current choices, inline errors, and back/next.
+  - Phone resolution is its own step. No mode is pre-selected, and each mode states whether phone ownership moves.
+  - Result cards show code, amount, owner, customer code, canonical/historical phones, services and verification/primary state. They also show 🔒 lock, ⚑ active case and ambiguity badges, plus an obvious ✓ selected state.
+  - A persistent lock stays selectable. Only an active conflicting case disables selection.
+- **Case detail:**
+  - a workflow stepper and a "next step" card;
+  - a review checklist for reviewers;
+  - actions grouped by responsibility: requester, specialist, supervisor, execution/recovery;
+  - a HIGH_RISK supervisor-required banner;
+  - sections A–J (summary, comparison, assets, risk, holds/locks, evidence, OTP, decision, timeline, execution/recovery);
+  - an execution track for NOT_STARTED / COMMITTED / FINALIZATION_FAILED / FINALIZED;
+  - a timeline with Persian titles, actor, time and summary, with raw metadata only inside a collapsed «جزئیات فنی»;
+  - Customer Hold, persistent Ownership Lock and Active Ownership Case shown with three distinct visual treatments and explanatory text.
+- **Bug found by the browser suite and fixed.** The final-plan form field was named `action`. In a real `FormData` POST it collided with the admin-ajax routing key `action`: PHP kept `bcrm_ownership`, and «تأیید برنامه انتقال» always failed with "Unsupported final asset action." The field is now `final_action`. `tests/ownership-c3-static.py` forbids any UI field named `action`.
+
+**Automated browser acceptance** (`tests/browser/run.sh`):
+
+- **How it runs:** fresh SQLite fixture → PHP built-in server with the real plugin classes behind WordPress doubles → Playwright/Chromium.
+  - The real frozen `Biawin_CRM_Frontend` provides the portal shell, the legacy related panel and `ajax_attach_invoice`.
+  - The real frozen `assets/frontend.js` drives the legacy flow.
+  - Admin-ajax hook order is emulated: bridge at priority 1, then the legacy handler.
+- **Scenarios:**
+  - permissions / unauthorized;
+  - A (wizard → draft → submit, holds);
+  - B (assign → review → evidence → consent contact → final plan → risk → approve → execute → CLOSED/FINALIZED);
+  - C (multi-invoice HIGH_RISK → independent supervisor approval → execute);
+  - D (phone claim, OTP issue/verify without ownership change, SoD for the decision maker, rejection reason required, return to UNDER_REVIEW);
+  - G (draft → cancel → read-only);
+  - E (evidence request → requester upload → timeline → customer confirmation);
+  - F (injected post-commit failure → FINALIZATION_FAILED → resume only → CLOSED);
+  - K (COMMITTED rendering → resume);
+  - stale version banner, inline validation, dialog fit at 390px;
+  - H (legacy locked Attach: lock shown before mutation, disabled buttons, forced POST → 423 `ownership_locked`, CTA → prefilled review-only wizard, no case created).
+- **Coverage asserted:** every status, every execution state, AJAX version chaining, and no JS page errors.
+- **Visual checks:** request wizard, specialist queue, case detail, supervisor queue, finalization failure and closed case, each at 1366/768/390 px. Asserted: no horizontal overflow, no overlapping buttons, sticky panel separated from content. The legacy locked-attach screen is also captured.
+- **Result:** `PASS: 258 C3.9 browser flow checks`.
+
+Run: `PHP_EXT_DIR=<php ext dir> tests/browser/run.sh` (needs `php` with pdo_sqlite and mbstring, `node`, and Playwright with Chromium; `PLAYWRIGHT_PATH` can point to a global install). This is fixture-backed browser evidence, not WordPress/MySQL runtime acceptance.
+
+**Still for the local Runtime Lab:**
+- the same flows on WordPress + MySQL with real roles;
+- real admin-ajax hook order;
+- real media uploads and previews;
+- a real OTP sender;
+- InnoDB locking/rollback;
+- WordPress admin submenu rendering;
+- theme/Elementor interaction with the portal shell;
+- screen-reader and keyboard-only passes on real devices.

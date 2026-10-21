@@ -134,7 +134,8 @@ class Biawin_CRM_Ownership_Ajax
                     break;
                 case 'set_final_plan':
                     Biawin_CRM_Ownership_Workflow::set_final_plan($id, $version, self::int($in, 'asset_row'), [
-                        'action' => strtoupper(self::str($in, 'action')) ?: 'TRANSFER',
+                        // "action" is WordPress's AJAX routing key, so HTTP forms send "final_action".
+                        'action' => strtoupper(self::str($in, isset($in['final_action']) ? 'final_action' : 'action')) ?: 'TRANSFER',
                         'phone_resolution' => strtoupper(self::str($in, 'phone_resolution')),
                         'phone_id' => self::int($in, 'phone_id') ?: null,
                         'phone' => sanitize_text_field(self::str($in, 'phone')) ?: null,

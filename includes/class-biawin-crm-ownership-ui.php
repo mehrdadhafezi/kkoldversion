@@ -479,7 +479,7 @@ class Biawin_CRM_Ownership_UI
         $view['source'] = $source;
         $view['claimant'] = $claimant;
         $readonly = in_array($case->status, ['CLOSED', 'CANCELLED'], true);
-        $html = '<article class="bcrm-own-case" data-own-case="' . (int)$case->id . '" data-own-version="' . (int)$case->lock_version . '" data-own-status="' . esc_attr($case->status) . '" data-own-source="' . (int)$case->current_owner_customer_id . '" data-own-claimant="' . (int)$case->claimant_customer_id . '">';
+        $html = '<article class="bcrm-own-case" data-own-case="' . (int)$case->id . '" data-own-version="' . (int)$case->lock_version . '" data-own-status="' . esc_attr($case->status) . '" data-own-execution="' . esc_attr((string)$case->execution_state) . '" data-own-risk="' . esc_attr((string)$case->risk_level) . '" data-own-source="' . (int)$case->current_owner_customer_id . '" data-own-claimant="' . (int)$case->claimant_customer_id . '">';
         $html .= '<a class="bcrm-own-back" href="' . esc_url(self::url(['own_tab' => $view['reviewer'] ? 'queue' : 'mine'])) . '">→ بازگشت به فهرست</a>';
         $html .= self::case_header($view);
         $html .= '<div class="bcrm-own-stale" data-own-stale hidden role="alert"><strong>این پرونده تغییر کرده است.</strong> اطلاعات نمایش‌داده‌شده قدیمی است؛ پیش از هر اقدام صفحه را تازه‌سازی کنید. <button type="button" class="bcrm-secondary-button" data-own-reload>تازه‌سازی پرونده</button></div>';
@@ -749,7 +749,7 @@ class Biawin_CRM_Ownership_UI
         $prefix = 'own-fp-' . (int)$asset->id;
         $action = (string)($asset->final_action ?: $asset->requested_action);
         $html = '<details class="bcrm-own-subform"><summary>تعیین برنامه نهایی این فاکتور</summary><form class="bcrm-own-action" data-own-op="set_final_plan" data-own-plan data-req-action="' . esc_attr($asset->requested_action) . '" data-req-mode="' . esc_attr((string)$asset->requested_phone_resolution) . '" data-req-pid="' . (int)$asset->requested_phone_id . '" data-req-phone="' . esc_attr((string)$asset->requested_phone_normalized) . '" data-own-confirm="برنامه نهایی این فاکتور ثبت شود؟ تغییر نسبت به درخواست به‌عنوان تغییر برنامه توسط کارشناس ثبت می‌شود و ممکن است سطح ریسک پرونده را تغییر دهد.">';
-        $html .= '<input type="hidden" name="asset_row" value="' . (int)$asset->id . '"><div class="bcrm-own-form-grid"><label for="' . $prefix . '-a">اقدام نهایی</label><select id="' . $prefix . '-a" name="action">';
+        $html .= '<input type="hidden" name="asset_row" value="' . (int)$asset->id . '"><div class="bcrm-own-form-grid"><label for="' . $prefix . '-a">اقدام نهایی</label><select id="' . $prefix . '-a" name="final_action">';
         foreach (Biawin_CRM_Ownership_Presenter::ACTIONS as $key => $label) $html .= '<option value="' . esc_attr($key) . '"' . selected($action, $key, false) . '>' . self::e($label) . '</option>';
         $html .= '</select></div>' . self::phone_mode_fields($prefix, $view, (string)($asset->final_phone_resolution ?: $asset->requested_phone_resolution), $asset->final_phone_id ?: $asset->requested_phone_id, $asset->final_phone_normalized ?: $asset->requested_phone_normalized);
         $html .= '<label for="' . $prefix . '-r">دلیل تغییر برنامه <small data-own-plan-hint>(در صورت تغییر نسبت به درخواست الزامی است)</small></label><textarea id="' . $prefix . '-r" name="reason" rows="2"></textarea>';

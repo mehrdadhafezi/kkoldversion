@@ -4,6 +4,7 @@
 - Add thin `bcrm_ownership` AJAX adapters that each call one approved C2 Workflow/OTP/Transfer command; read-only lookups reuse existing portal exposure.
 - Persian/RTL, responsive (cards on mobile), accessible dialogs/forms; FINALIZATION_FAILED offers only «ادامه نهایی‌سازی».
 - C3.8: legacy Attach on Ownership-locked/held assets now returns a controlled Persian failure (ownership_locked / ownership_hold) with a path into a re-validated, prefilled Ownership request instead of a critical error; lock status is shown on legacy search results before mutation.
+- C3.9: six-step request wizard, grouped case actions, workflow/execution trackers, distinct hold/lock/active-case UX; fix final-plan field colliding with the admin-ajax `action` key; add a headless-Chromium flow acceptance suite (tests/browser).
 - No schema, migration, state-machine, risk, SoD, OTP, hold, lock or transfer change; plugin version unchanged.
 
 ## 0.8.65.19 — Ownership Reconciliation backend

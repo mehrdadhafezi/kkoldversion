@@ -15,7 +15,8 @@ UI_ASSETS = ["ownership-ui/ownership.js", "ownership-ui/ownership.css"]
 
 changed = subprocess.check_output(["git", "diff", "--name-only", C2, "--"], text=True).split()
 changed += subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], text=True).split()
-allowed = set(UI_PHP + UI_ASSETS + ["biawin-crm-integration.php", "CHANGELOG.md", "STRUCTURE.md", "docs/OWNERSHIP-RECONCILIATION-C3-UI.md", "tests/ownership-c3-ui.php", "tests/ownership-c3-static.py", "tests/ownership-c3-legacy-bridge.php"])
+allowed = set(UI_PHP + UI_ASSETS + ["biawin-crm-integration.php", "CHANGELOG.md", "STRUCTURE.md", "docs/OWNERSHIP-RECONCILIATION-C3-UI.md", "tests/ownership-c3-ui.php", "tests/ownership-c3-static.py", "tests/ownership-c3-legacy-bridge.php",
+    "tests/browser/bootstrap.php", "tests/browser/seed.php", "tests/browser/router.php", "tests/browser/ownership-flows.js", "tests/browser/run.sh"])
 unexpected = sorted(set(changed) - allowed)
 assert not unexpected, "C3 changed files outside the UI layer: %s" % unexpected
 print("PASS: only C3 UI/adapter/doc/test files differ from the approved C2 checkpoint (%d files)" % len(set(changed)))
@@ -74,3 +75,11 @@ assert not re.search(r"Lock_Service::|Transfer_Service::|Workflow::", bridge), "
 assert "'ownership_locked' => 423" in bridge and "'unexpected' => 500" in bridge
 assert "تغییر مالکیت این فاکتور فقط از مسیر تطبیق مالکیت مجاز است." in bridge and "این پروفایل تا تعیین تکلیف پرونده تطبیق مالکیت فقط خواندنی است." in bridge
 print("PASS: C3.8 bridge hooks existing legacy actions at priority 1, never performs Attach or ownership commands, keeps failures as failures")
+
+# ---- C3.9: form fields must never collide with WordPress's AJAX routing key "action"
+ui = Path("includes/class-biawin-crm-ownership-ui.php").read_text(encoding="utf-8")
+assert not re.search(r'name="action"', ui), "UI form field named 'action' collides with admin-ajax routing"
+assert 'name="final_action"' in ui and "isset($in['final_action'])" in ajax
+result = subprocess.run(["node", "--check", "tests/browser/ownership-flows.js"], capture_output=True, text=True)
+assert result.returncode == 0, result.stderr
+print("PASS: C3.9 no form field shadows the admin-ajax 'action' key; browser suite syntax valid")

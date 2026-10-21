@@ -314,3 +314,7 @@
 @media (max-width:760px){.bcrm-own-stepper li{flex:1 1 calc(50% - 4px)}.bcrm-own-result>header .bcrm-own-badges{margin-inline-start:0;width:100%}}
 .bcrm-portal-shell.is-dark .bcrm-own-legend>div,.bcrm-portal-shell.is-dark .bcrm-own-note-lock{background:var(--own-soft);color:#e5edf8}
 .bcrm-portal-shell.is-dark .bcrm-own-next{background:#13264a;color:#e5edf8}
+/* Picker footer (draft/amend): reason + commit stack vertically like other forms. */
+.bcrm-own [data-own-picker]>label{display:block;font-weight:700;font-size:12.5px;margin:12px 0 4px}
+.bcrm-own [data-own-picker]>textarea{display:block;width:100%;max-width:100%;padding:8px 10px;border:1px solid var(--own-border);border-radius:9px;font:inherit;background:var(--own-surface);color:var(--own-text)}
+.bcrm-own [data-own-picker]>[data-commit]{display:inline-flex;margin-top:10px;min-height:40px}
