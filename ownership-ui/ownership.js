@@ -212,7 +212,7 @@
         return "";
     }
     function createPicker(host, ctx) {
-        var selected = {}, order = [], results = {invoices: [], phones: []}, claimantPhones = null;
+        var selected = {}, order = [], results = {invoices: [], phones: []}, claimantPhones = null, suggested = "";
         var mode = ctx.mode || "wizard";
         host.innerHTML = '<div class="bcrm-own-searchbar"><label for="own-pick-' + mode + '">جست‌وجوی فاکتور یا شماره در پروفایل مبدأ</label><div><input id="own-pick-' + mode + '" type="search" data-q autocomplete="off" placeholder="کد فاکتور یا شماره موبایل"><button type="button" class="bcrm-secondary-button" data-search>جست‌وجو</button></div></div>' +
             '<div class="bcrm-own-results" data-results aria-live="polite"></div><h4 data-sel-title>دارایی‌های انتخاب‌شده</h4><div class="bcrm-own-selected" data-selected></div>' +
@@ -229,7 +229,7 @@
             var html = note ? '<p class="bcrm-own-muted">' + esc(note) + "</p>" : "";
             results.invoices.forEach(function (inv) {
                 var why = invoiceWhy(inv, ctx), k = key("INVOICE", inv.id), chosen = !!selected[k] || ctx.existing.indexOf(k) !== -1;
-                html += '<div class="bcrm-own-result' + (why ? " is-disabled" : "") + (chosen ? " is-selected" : "") + '"><div class="bcrm-own-result-main"><strong>فاکتور <bdi>' + esc(inv.code) + "</bdi></strong> " + (inv.locked ? badge("قفل مالکیت", "warning") : "") + (inv.ambiguous ? badge("شماره تاریخی مبهم", "danger") : "") +
+                html += '<div class="bcrm-own-result' + (why ? " is-disabled" : "") + (chosen ? " is-selected" : "") + (k === suggested ? " is-suggested" : "") + '"><div class="bcrm-own-result-main">' + (k === suggested && !chosen ? '<p class="bcrm-own-suggested">دارایی پیشنهادی از اتصال ناموفق — برای افزودن، آن را صریحاً انتخاب کنید.</p>' : "") + '<strong>فاکتور <bdi>' + esc(inv.code) + "</bdi></strong> " + (inv.locked ? badge("🔒 قفل مالکیت", "warning") : "") + (inv.ambiguous ? badge("شماره تاریخی مبهم", "danger") : "") +
                     "<p>مبلغ: " + esc(money(inv.amount)) + " · مالک: " + esc(inv.owner.name) + (inv.owner.code ? " (" + esc(inv.owner.code) + ")" : "") + "</p>" +
                     "<p>شماره رسمی: " + (inv.canonical ? '<bdi dir="ltr">' + esc(inv.canonical) + "</bdi>" : "ثبت نشده") + " · شماره‌های سوابق: " + (inv.phones.length ? '<bdi dir="ltr">' + esc(inv.phones.join("، ")) + "</bdi>" : "—") + "</p>" +
                     "<p>خدمات وابسته: " + esc(inv.services.length ? inv.services.join("، ") : "بدون خدمت") + "</p>" +
@@ -238,8 +238,8 @@
             });
             results.phones.forEach(function (ph) {
                 var why = invoiceWhy(ph, ctx), k = key("PHONE", ph.id), chosen = !!selected[k] || ctx.existing.indexOf(k) !== -1;
-                html += '<div class="bcrm-own-result' + (why ? " is-disabled" : "") + (chosen ? " is-selected" : "") + '"><div class="bcrm-own-result-main"><strong>شماره <bdi dir="ltr">' + esc(ph.phone) + "</bdi></strong> " + (ph.primary ? badge("اصلی", "primary") : "") + badge(ph.status === "verified" ? "تأییدشده" : (ph.status || "نامشخص"), "neutral") + (ph.locked ? badge("قفل مالکیت", "warning") : "") +
-                    "<p>مالک: " + esc(ph.owner.name) + (ph.owner.code ? " (" + esc(ph.owner.code) + ")" : "") + "</p>" + (why ? '<p class="bcrm-own-result-why">' + esc(why) + "</p>" : "") +
+                html += '<div class="bcrm-own-result' + (why ? " is-disabled" : "") + (chosen ? " is-selected" : "") + (k === suggested ? " is-suggested" : "") + '"><div class="bcrm-own-result-main">' + (k === suggested && !chosen ? '<p class="bcrm-own-suggested">دارایی پیشنهادی از اتصال ناموفق — برای افزودن، آن را صریحاً انتخاب کنید.</p>' : "") + '<strong>شماره <bdi dir="ltr">' + esc(ph.phone) + "</bdi></strong> " + (ph.primary ? badge("اصلی", "primary") : "") + badge(ph.status === "verified" ? "تأییدشده" : (ph.status || "نامشخص"), "neutral") + (ph.locked ? badge("🔒 قفل مالکیت", "warning") : "") +
+                    "<p>مالک: " + esc(ph.owner.name) + (ph.owner.code ? " (" + esc(ph.owner.code) + ")" : "") + "</p>" + (ph.locked ? "<p>" + esc(cfg.phoneLockText) + "</p>" : "") + (why ? '<p class="bcrm-own-result-why">' + esc(why) + "</p>" : "") +
                     '</div><button type="button" class="bcrm-secondary-button" data-pick="' + esc(k) + '"' + (why || chosen ? " disabled" : "") + ">" + (chosen ? "انتخاب‌شده" : "ادعای مالکیت خود شماره") + "</button></div>";
             });
             if (!results.invoices.length && !results.phones.length) html += '<div class="bcrm-own-empty"><strong>نتیجه‌ای یافت نشد.</strong><p>کد فاکتور یا شماره موبایل را کامل وارد کنید.</p></div>';
@@ -410,7 +410,7 @@
         return {
             setSource: function (src) { ctx.source = src; order.slice().forEach(function (k) { if (selected[k].data.owner.id !== src.id) remove(k); }); renderResults(); },
             setClaimant: function (c) { if (!ctx.claimant || ctx.claimant.id !== c.id) { claimantPhones = null; order.forEach(function (k) { if (selected[k].mode === "USE_TARGET_PROFILE_PHONE") selected[k].phone_id = ""; }); } ctx.claimant = c; renderResults(); renderSelected(); },
-            seed: function (data) { results = data; renderResults(); },
+            seed: function (data, hint) { results = data; if (hint !== undefined) suggested = hint; renderResults(); },
             search: search, validate: validate, inputs: inputs,
             items: function () { return order.map(function (k) { return selected[k]; }); },
             loadClaimantPhones: loadClaimantPhones
@@ -431,7 +431,7 @@
                 li.classList.toggle("is-done", n < step);
             });
             var heading = qs('[data-own-step="' + step + '"] h3', root); if (heading) { heading.setAttribute("tabindex", "-1"); heading.focus(); }
-            if (step === 3 && state.lookup) picker.seed(state.lookup);
+            if (step === 3 && state.lookup) picker.seed(state.lookup, state.suggested || "");
             if (step === 5) renderReview();
         }
         function stepError(step, message) {
@@ -570,11 +570,74 @@
         qsa("[data-own-lookup-q],[data-own-claimant-q]", root).forEach(function (input) {
             input.addEventListener("keydown", function (e) { if (e.key !== "Enter") return; e.preventDefault(); if (input.hasAttribute("data-own-lookup-q")) lookupSource(); else searchClaimant(input.value); });
         });
-        var preset = Number(root.getAttribute("data-own-claimant"));
-        if (preset) post("profile_summary", {customer: preset}).then(function (res) { if (res.ok && !res.data.restricted) { state.claimants = {}; state.claimants[preset] = res.data; pickClaimant(res.data); } });
+        // Prefill hints were re-validated server-side; they only pre-populate reviewable choices.
+        var prefill = null;
+        try { prefill = JSON.parse(root.getAttribute("data-own-prefill") || "null"); } catch (e) { prefill = null; }
+        if (prefill) {
+            if (prefill.source) {
+                state.source = {id: prefill.source.id, name: prefill.source.name, code: prefill.source.code};
+                state.sourceSummary = prefill.source;
+                picker.setSource(state.source);
+                qs("[data-own-source-card]", root).innerHTML = profileCard(prefill.source, "source");
+                nextEnabled(1, true);
+            }
+            if (prefill.claimant) { state.claimants = {}; state.claimants[prefill.claimant.id] = prefill.claimant; pickClaimant(prefill.claimant); }
+            if (prefill.asset) {
+                var asset = prefill.asset, bucket = asset.asset_type === "PHONE" ? "phones" : "invoices";
+                state.lookup = {invoices: [], phones: [], phone_usage_count: 0};
+                state.lookup[bucket] = [asset];
+                state.suggested = key(asset.asset_type, asset.id);
+                var q = qs("[data-own-lookup-q]", root); if (q) q.value = asset.code || asset.phone || "";
+            }
+        }
+    }
+
+    /* ------------------------------------------------------------ legacy Attach bridge (profile page)
+     * Decorates the frozen legacy related-search results with Ownership lock/hold/case status
+     * before the user attempts an ordinary Attach. The server-side bridge still blocks the
+     * mutation on its own; this is presentation only. */
+    function initLegacyBridge() {
+        var panel = qs("[data-bcrm-related-panel]"); if (!panel) return;
+        var results = qs("[data-bcrm-related-results]", panel), idInput = qs("[data-bcrm-customer-id]", panel); if (!results || !idInput) return;
+        var known = {}, lastCode = "";
+        function cta(info) { return info.request_url ? ' <a class="bcrm-own-legacy-cta" href="' + esc(info.request_url) + '">ثبت درخواست تطبیق مالکیت</a>' : ""; }
+        function decorate() {
+            var cards = qsa("[data-bcrm-invoice-result]", results).filter(function (c) { return !c.hasAttribute("data-own-checked"); });
+            if (!cards.length) return;
+            cards.forEach(function (c) { c.setAttribute("data-own-checked", "1"); });
+            post("legacy_status", {customer: idInput.value, codes: JSON.stringify(cards.map(function (c) { return c.getAttribute("data-bcrm-invoice-result"); }))}).then(function (res) {
+                if (!res.ok) return;
+                cards.forEach(function (card) {
+                    var code = card.getAttribute("data-bcrm-invoice-result"), info = res.data.invoices[code]; if (!info) return;
+                    known[code] = info;
+                    var parts = [];
+                    if (info.locked) parts.push("<strong>🔒 قفل مالکیت:</strong> " + esc(info.message));
+                    else if (info.held) parts.push("<strong>🔒 توقف پروفایل:</strong> " + esc(info.message));
+                    else if (info.maybe_locked) parts.push("<strong>احتمال قفل مالکیت:</strong> " + esc(info.message));
+                    if (info.active_case) parts.push("این فاکتور در پرونده تطبیق فعال <bdi>" + esc(info.active_case.code) + "</bdi> است.");
+                    var note = document.createElement("div");
+                    note.className = "bcrm-own-legacy-note"; note.id = "own-legacy-" + info.invoice_id; note.setAttribute("role", "note");
+                    note.innerHTML = parts.join(" ") + (info.maybe_locked ? "" : " اتصال عادی این فاکتور مجاز نیست.") + cta(info);
+                    card.appendChild(note);
+                    if (info.maybe_locked) return;
+                    qsa("[data-attach-invoice-only],[data-attach-bundle]", card).forEach(function (b) { b.disabled = true; b.setAttribute("aria-describedby", note.id); b.title = info.message; });
+                });
+            });
+        }
+        new MutationObserver(decorate).observe(results, {childList: true, subtree: true});
+        panel.addEventListener("click", function (e) { var b = e.target.closest("[data-attach-invoice-only],[data-attach-bundle]"); if (b) lastCode = b.getAttribute("data-attach-invoice-only") || b.getAttribute("data-attach-bundle") || ""; }, true);
+        var message = qs(".bcrm-result-message", panel);
+        if (message) new MutationObserver(function () {
+            if (message.querySelector(".bcrm-own-legacy-cta")) return;
+            var text = message.textContent || "";
+            if (text.indexOf(cfg.lockText) === -1 && text.indexOf(cfg.holdText) === -1 && text.indexOf(cfg.phoneLockText) === -1) return;
+            var info = known[lastCode];
+            if (info && info.request_url) message.insertAdjacentHTML("beforeend", cta(info));
+        }).observe(message, {childList: true, characterData: true, subtree: true});
     }
 
     document.addEventListener("DOMContentLoaded", function () {
+        initLegacyBridge();
         if (!qs("[data-bcrm-own]")) return;
         showFlash();
         initLists();

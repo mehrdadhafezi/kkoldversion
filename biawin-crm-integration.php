@@ -36,6 +36,7 @@ require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-write-guard.p
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-presenter.php'; // C3 UI: read-only view models
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-ajax.php'; // C3 UI: thin command adapters
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-ui.php'; // C3 UI: workspaces
+require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-ownership-legacy-bridge.php'; // C3.8: legacy Attach ↔ ownership bridge
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-file-safety.php'; // v0.8.63.2
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-upload-normalizer.php';
 require_once BIAWIN_CRM_DIR . 'includes/class-biawin-crm-receipt-staging.php';

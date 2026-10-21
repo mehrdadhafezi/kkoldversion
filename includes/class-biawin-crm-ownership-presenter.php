@@ -217,6 +217,12 @@ class Biawin_CRM_Ownership_Presenter
             $message = 'دسترسی لازم برای این اقدام را ندارید.';
         } elseif (in_array($raw, ['Only your own ownership claims are accessible.', 'Ownership case is not assigned to you.', 'Claimant profile access denied.', 'Media access denied.'], true)) {
             $code = 'permission';
+        } elseif ($raw === 'Asset ownership is locked; use Ownership Reconciliation.') {
+            $code = 'ownership_locked';
+        } elseif ($raw === 'Customer is read-only during ownership review.') {
+            $code = 'ownership_hold';
+        } elseif (in_array($raw, ['Asset already participates in an active ownership case.', 'Conflicting active ownership case.'], true)) {
+            $code = 'active_ownership_case';
         } elseif (strpos($raw, 'Ownership action is not allowed in state ') === 0) {
             $code = 'state';
             $message = 'این اقدام در وضعیت «' . self::label(self::STATUSES, substr($raw, strlen('Ownership action is not allowed in state '))) . '» مجاز نیست. صفحه را تازه‌سازی کنید.';

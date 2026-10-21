@@ -32,6 +32,7 @@ class Biawin_CRM_Ownership_UI
         add_action('wp_enqueue_scripts', [__CLASS__, 'front_assets'], 30);
         add_action('admin_enqueue_scripts', [__CLASS__, 'admin_assets'], 30);
         Biawin_CRM_Ownership_Ajax::init();
+        Biawin_CRM_Ownership_Legacy_Bridge::init();
     }
 
     // ------------------------------------------------------------------ wiring
@@ -419,10 +420,20 @@ class Biawin_CRM_Ownership_UI
     private static function render_request(): string
     {
         if (!current_user_can('submit_ownership_claim')) return self::denied('ثبت درخواست تطبیق مالکیت برای حساب شما مجاز نیست.');
-        $claimant = absint($_GET['claimant'] ?? 0);
+        // Query parameters are hints only; Ajax::prefill() re-reads and re-authorizes every value.
+        $prefill = Biawin_CRM_Ownership_Ajax::prefill([
+            'claimant' => $_GET['claimant'] ?? 0, 'source' => $_GET['source'] ?? 0,
+            'asset_type' => $_GET['asset_type'] ?? '', 'asset_id' => $_GET['asset_id'] ?? 0,
+        ]);
+        $has_prefill = $prefill['claimant'] || $prefill['source'] || $prefill['asset'] || $prefill['notices'];
         $steps = [1 => 'پروفایل مبدأ (مالک فعلی)', 2 => 'پروفایل مقصد (مدعی)', 3 => 'انتخاب دارایی‌ها و شماره فاکتور', 4 => 'دلیل و توضیحات', 5 => 'بازبینی و ثبت'];
-        $html = '<section class="bcrm-own-section bcrm-own-wizard" data-own-wizard data-own-claimant="' . (int)$claimant . '"><div class="bcrm-own-section-head"><div><h2>درخواست تطبیق مالکیت</h2><p>ادعای مالکیت فاکتور یا شماره‌ای که در پروفایل دیگری ثبت شده است.</p></div></div>';
+        $html = '<section class="bcrm-own-section bcrm-own-wizard" data-own-wizard' . ($has_prefill ? ' data-own-prefill="' . esc_attr((string)wp_json_encode($prefill)) . '"' : '') . '><div class="bcrm-own-section-head"><div><h2>درخواست تطبیق مالکیت</h2><p>ادعای مالکیت فاکتور یا شماره‌ای که در پروفایل دیگری ثبت شده است.</p></div></div>';
         $html .= self::alert('warning', '<strong>' . self::e(self::NOT_TRANSFER) . '</strong> درخواست پس از بررسی کارشناس تطبیق مالکیت و در صورت نیاز تأیید سرپرست اجرا می‌شود.');
+        if ($has_prefill) {
+            $notes = '';
+            foreach ($prefill['notices'] as $notice) $notes .= '<li>' . self::e($notice) . '</li>';
+            $html .= self::alert('info', '<strong>پیشنهاد از اتصال ناموفق پروفایل.</strong> اطلاعات زیر از وضعیت فعلی سیستم بازخوانی و برای بازبینی شما پیشنهاد شده است. هیچ پرونده‌ای ایجاد یا ارسال نشده است؛ دارایی، روش شماره، دلیل و ارسال را باید خودتان صریحاً انتخاب و تأیید کنید.' . ($notes !== '' ? '<ul>' . $notes . '</ul>' : ''), 'status');
+        }
         $html .= '<ol class="bcrm-own-steps" aria-label="مراحل درخواست">';
         foreach ($steps as $n => $label) $html .= '<li data-own-step-nav="' . $n . '"' . ($n === 1 ? ' aria-current="step"' : '') . '><span>' . self::e(number_format_i18n($n)) . '</span>' . self::e($label) . '</li>';
         $html .= '</ol>';

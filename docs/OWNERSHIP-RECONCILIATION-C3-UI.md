@@ -113,3 +113,69 @@ No WordPress, MySQL or real browser session against the plugin exists in Cloud. 
 - No entry button was added to the customer profile page (frozen file); use the claimant pre-fill URL above, or add a link in a later approved change to the profile view.
 - Contact results are UI-provided values; only `current_owner_consent` has backend meaning (consent approval).
 - Error texts map the known backend messages; unknown messages are shown verbatim with a Persian prefix.
+
+## 11. C3.8 — legacy Attach ↔ Ownership bridge (runtime remediation)
+
+**Root cause of the Local Runtime critical error.** `Biawin_CRM_Frontend::ajax_attach_invoice()` (`wp_ajax_bcrm_attach_invoice`) calls `Biawin_CRM_Customer_Service::attach_invoice()`. Its first write (invoice owner update) goes through `Biawin_CRM_DB::write()` → `Biawin_CRM_Ownership_Write_Guard`, which correctly throws `RuntimeException('Asset ownership is locked; use Ownership Reconciliation.')`. The frozen legacy handler has no `try/catch`, so the exception became a PHP fatal / WordPress critical error. The guard is correct and unchanged.
+
+Also observed: for a **complete** source profile the guard first runs `Lock_Service::sync_completed(source)` and so materializes the persistent completion locks on the first protected write, then rejects it. This is unchanged C2 behaviour. It also explains why invoices of completed profiles are protected even before a lock row exists.
+
+**Implementation (no frozen file touched).** `includes/class-biawin-crm-ownership-legacy-bridge.php` hooks the same legacy actions at priority **1**. The legacy callbacks stay at priority 10.
+
+- `bcrm_attach_invoice`, `bcrm_attach_bundle`, admin-post `bcrm_front_attach_invoice` get a read-only pre-check:
+  - The checks are: valid nonce, `bcrm_work_cases`, target access, invoice exists, owner ≠ target. The pre-check then looks for an active invoice lock, an active lock on an explicit bundle phone, and a hold on the target or source.
+  - If prohibited, the bridge answers with `wp_send_json_error(..., 423)` (or a controlled `wp_die` page). The request ends, so the legacy handler never runs and nothing is written.
+  - Otherwise it returns silently and the legacy handler runs exactly as before.
+- All 15 covered legacy AJAX mutations and 11 admin-post mutations get a request-scoped `set_exception_handler`:
+  - Any escaped Ownership lock/hold rejection becomes a controlled failure. For an Attach it is enriched with asset/source/claimant/CTA, which covers the completion-lock case.
+  - An uncommitted legacy transaction is rolled back.
+  - Any other exception remains a visible `unexpected` 500 error and is logged.
+
+**Error contract** (`success:false`):
+
+```json
+{ "code": "ownership_locked | ownership_hold | ownership_busy | unexpected",
+  "message": "🔒 تغییر مالکیت این فاکتور فقط از مسیر تطبیق مالکیت مجاز است. …",
+  "detail": "(unexpected only) raw backend message",
+  "ownership": { "asset_type": "INVOICE|PHONE", "asset_id": 8, "asset_label": "LAB-IMPORT-INV-001",
+                 "locked": true, "held": [customer ids], "active_case": {"id": 0, "code": "OWN-…"} | null,
+                 "source": {"id","name","code"}, "claimant": {"id","name","code"},
+                 "request_url": "…?bcrm_view=ownership&own_tab=request&claimant=…&source=…&asset_type=INVOICE&asset_id=…" | null,
+                 "action_label": "ثبت درخواست تطبیق مالکیت" | null } }
+```
+
+HTTP status: `ownership_locked`/`ownership_hold` 423, `active_ownership_case` 409, `ownership_busy` 503, `unexpected` 500. When the asset is already in an active Ownership case, no duplicate-claim CTA is offered and the case code is named. C3 adapter errors are now also classified as `ownership_locked`, `ownership_hold` and `active_ownership_case` (in addition to `permission`, `stale`, `state`, `input`, `not_found` and `domain`).
+
+**Before mutation.** On the legacy profile page, `ownership.js` observes the frozen related-search results and calls the read-only op `legacy_status`, which requires access to the target profile.
+
+- **Active lock:** «🔒 قفل مالکیت» + lock message + CTA, and the legacy Attach buttons are disabled with `aria-describedby`.
+- **Hold:** the hold message.
+- **Active case:** the case is named. This is reported separately from a persistent lock.
+- **Complete source without a lock row yet:** only a «احتمال قفل مالکیت» hint and the CTA. The buttons stay enabled and the server decides.
+
+If a lock or hold message still appears after an attempt, the CTA is appended to the legacy result message.
+
+**Prefill contract.** `bcrm_view=ownership&own_tab=request&claimant=<id>&source=<id>&asset_type=INVOICE|PHONE&asset_id=<id>`. This extends the existing `claimant` hint. `Biawin_CRM_Ownership_Ajax::prefill()` re-validates everything on load:
+
+- requires `submit_ownership_claim`;
+- claimant must exist and pass `can_access_customer()`;
+- the asset is re-read and its **current DB owner** becomes the source (a differing `source` hint is replaced, with a notice);
+- the asset is dropped if missing, ownerless, or already the claimant's;
+- source = claimant is dropped;
+- the asset is re-read through `lookup()`, which re-reads the lock state;
+- malformed values are ignored.
+
+The wizard shows the source and claimant cards and highlights the suggested asset. It never selects the asset, never chooses the phone resolution, and never creates or submits anything. The user still explicitly chooses the asset, action, phone mode and reason, and confirms the submission.
+
+**Formal workflow with a persistently locked invoice** (tested): `create_draft` → `add_draft_asset` (locked invoice) → `submit` all succeed and both holds are applied. A duplicate active claim is rejected (`active_ownership_case`). Execution moves the invoice and its lock to the claimant. A persistent lock never disables selection in the wizard; only an active conflicting case does.
+
+**Customer search.** Locally verified PASS with `http://localhost:8088/?page_id=4&bcrm_view=customers&bcrm_filter=all&bcrm_per_page=50&bcrm_contact=all&bcrm_q=09120000007` (LAB-F-PENDING). The earlier failure was the URL without `page_id=4`. No customer-search source was changed.
+
+**Local re-test still required:**
+- real `admin-ajax.php` hook order with the actual frontend callbacks;
+- browser Attach on `LAB-IMPORT-INV-001` (invoice 8): no critical error, Persian lock message, CTA, buttons disabled after search;
+- CTA → prefilled wizard → draft → submit;
+- a held profile's interaction/journey save shows the hold message;
+- unlocked Attach on an incomplete profile is unchanged;
+- admin-post Attach form;
+- users without ownership capabilities (controlled message, no CTA).

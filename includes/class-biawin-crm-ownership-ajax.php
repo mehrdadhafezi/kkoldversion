@@ -45,7 +45,7 @@ class Biawin_CRM_Ownership_Ajax
         }
         $result = self::dispatch(sanitize_key((string)($_POST['op'] ?? '')), wp_unslash($_POST));
         if ($result['ok']) wp_send_json_success($result['data']);
-        $status = ['permission' => 403, 'stale' => 409, 'state' => 409, 'not_found' => 404, 'input' => 400][$result['error']['code']] ?? 422;
+        $status = ['permission' => 403, 'stale' => 409, 'state' => 409, 'active_ownership_case' => 409, 'ownership_locked' => 423, 'ownership_hold' => 423, 'not_found' => 404, 'input' => 400][$result['error']['code']] ?? 422;
         wp_send_json_error($result['error'], $status);
     }
 
@@ -171,6 +171,10 @@ class Biawin_CRM_Ownership_Ajax
                     return ['ok' => true, 'data' => self::claimant_search(sanitize_text_field(self::str($in, 'query')))];
                 case 'profile_summary':
                     return ['ok' => true, 'data' => self::profile_summary(self::int($in, 'customer'), $id)];
+                case 'legacy_status':
+                    self::require_ownership_reader();
+                    $codes = json_decode(self::str($in, 'codes'), true);
+                    return ['ok' => true, 'data' => Biawin_CRM_Ownership_Legacy_Bridge::status(self::int($in, 'customer'), is_array($codes) ? array_map('sanitize_text_field', array_filter($codes, 'is_string')) : [])];
                 case 'normalize_phone':
                     $phone = Biawin_CRM_Normalizer::phone(sanitize_text_field(self::str($in, 'phone')));
                     return ['ok' => true, 'data' => ['normalized' => $phone, 'valid' => $phone !== '']];
@@ -256,6 +260,59 @@ class Biawin_CRM_Ownership_Ajax
             ];
         }
         $out['phone_usage_count'] = (int)($found['phone_usage_count'] ?? 0);
+        return $out;
+    }
+
+    /**
+     * Re-validate wizard prefill hints (claimant, source, asset_type, asset_id).
+     * Every value is a hint: it is re-read from the database, checked against the
+     * current user's access and dropped with a visible notice when stale or not
+     * permitted. Nothing is created, added or submitted here.
+     */
+    public static function prefill(array $hints): array
+    {
+        global $wpdb;
+        $out = ['claimant' => null, 'source' => null, 'asset' => null, 'notices' => []];
+        if (!current_user_can('submit_ownership_claim')) return $out;
+        $claimant = absint($hints['claimant'] ?? 0);
+        if ($claimant) {
+            $exists = $wpdb->get_var($wpdb->prepare('SELECT id FROM ' . Biawin_CRM_DB::table('customers') . ' WHERE id=%d', $claimant));
+            if ($exists && Biawin_CRM_Frontend::can_access_customer($claimant)) $out['claimant'] = self::profile_summary($claimant);
+            else $out['notices'][] = 'پروفایل مقصد پیشنهادی وجود ندارد یا به آن دسترسی ندارید؛ نادیده گرفته شد.';
+        }
+        $type = strtoupper(sanitize_key((string)($hints['asset_type'] ?? '')));
+        $asset_id = absint($hints['asset_id'] ?? 0);
+        $source_hint = absint($hints['source'] ?? 0);
+        $owner = 0;
+        if ($asset_id || $type !== '') {
+            $row = null;
+            if ($type === 'INVOICE' && $asset_id) $row = $wpdb->get_row($wpdb->prepare('SELECT id,customer_id,invoice_code FROM ' . Biawin_CRM_DB::table('invoices') . ' WHERE id=%d', $asset_id));
+            if ($type === 'PHONE' && $asset_id) $row = $wpdb->get_row($wpdb->prepare('SELECT id,customer_id,normalized_phone FROM ' . Biawin_CRM_DB::table('phones') . ' WHERE id=%d', $asset_id));
+            if (!$row || empty($row->customer_id)) {
+                $out['notices'][] = 'دارایی پیشنهادی معتبر نیست یا مالک فعلی ندارد؛ نادیده گرفته شد.';
+            } elseif ($out['claimant'] && (int)$row->customer_id === $claimant) {
+                $out['notices'][] = 'دارایی پیشنهادی هم‌اکنون در پروفایل مقصد است؛ نادیده گرفته شد.';
+            } else {
+                $found = self::lookup($type === 'INVOICE' ? (string)$row->invoice_code : (string)$row->normalized_phone);
+                foreach ($found[$type === 'INVOICE' ? 'invoices' : 'phones'] as $item) if ($item['id'] === (int)$row->id) $out['asset'] = $item + ['asset_type' => $type];
+                if ($out['asset']) {
+                    $owner = (int)$row->customer_id;
+                    if ($source_hint && $source_hint !== $owner) $out['notices'][] = 'مالک فعلی دارایی با مبدأ پیشنهادی متفاوت است؛ مبدأ از اطلاعات فعلی سیستم تعیین شد.';
+                } else {
+                    $out['notices'][] = 'دارایی پیشنهادی در جست‌وجوی فعلی یافت نشد؛ نادیده گرفته شد.';
+                }
+            }
+        }
+        if (!$owner && $source_hint && !$out['asset'] && $asset_id === 0) {
+            $exists = $wpdb->get_var($wpdb->prepare('SELECT id FROM ' . Biawin_CRM_DB::table('customers') . ' WHERE id=%d', $source_hint));
+            if ($exists) $owner = $source_hint; else $out['notices'][] = 'پروفایل مبدأ پیشنهادی وجود ندارد؛ نادیده گرفته شد.';
+        }
+        if ($owner && $out['claimant'] && $owner === $claimant) {
+            $out['notices'][] = 'مبدأ و مقصد پیشنهادی یکسان‌اند؛ مبدأ نادیده گرفته شد.';
+            $owner = 0;
+            $out['asset'] = null;
+        }
+        if ($owner) $out['source'] = self::profile_summary($owner);
         return $out;
     }
 

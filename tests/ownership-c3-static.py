@@ -10,12 +10,12 @@ import re
 import subprocess
 
 C2 = "38779e8f5fa02e3544f0d3a51263aca2416b83b2"
-UI_PHP = ["includes/class-biawin-crm-ownership-presenter.php", "includes/class-biawin-crm-ownership-ajax.php", "includes/class-biawin-crm-ownership-ui.php"]
+UI_PHP = ["includes/class-biawin-crm-ownership-presenter.php", "includes/class-biawin-crm-ownership-ajax.php", "includes/class-biawin-crm-ownership-ui.php", "includes/class-biawin-crm-ownership-legacy-bridge.php"]
 UI_ASSETS = ["ownership-ui/ownership.js", "ownership-ui/ownership.css"]
 
 changed = subprocess.check_output(["git", "diff", "--name-only", C2, "--"], text=True).split()
 changed += subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], text=True).split()
-allowed = set(UI_PHP + UI_ASSETS + ["biawin-crm-integration.php", "CHANGELOG.md", "STRUCTURE.md", "docs/OWNERSHIP-RECONCILIATION-C3-UI.md", "tests/ownership-c3-ui.php", "tests/ownership-c3-static.py"])
+allowed = set(UI_PHP + UI_ASSETS + ["biawin-crm-integration.php", "CHANGELOG.md", "STRUCTURE.md", "docs/OWNERSHIP-RECONCILIATION-C3-UI.md", "tests/ownership-c3-ui.php", "tests/ownership-c3-static.py", "tests/ownership-c3-legacy-bridge.php"])
 unexpected = sorted(set(changed) - allowed)
 assert not unexpected, "C3 changed files outside the UI layer: %s" % unexpected
 print("PASS: only C3 UI/adapter/doc/test files differ from the approved C2 checkpoint (%d files)" % len(set(changed)))
@@ -58,3 +58,19 @@ assert not [f for f in subprocess.check_output(["git", "ls-files", "assets"], te
 result = subprocess.run(["node", "--check", "ownership-ui/ownership.js"], capture_output=True, text=True)
 assert result.returncode == 0, result.stderr
 print("PASS: C3 assets live outside frozen assets/; JS syntax valid (node --check)")
+
+# ---- C3.8 legacy Attach bridge
+bridge = Path("includes/class-biawin-crm-ownership-legacy-bridge.php").read_text(encoding="utf-8")
+frontend = Path("includes/class-biawin-crm-frontend.php").read_text(encoding="utf-8")
+ajax_actions = re.search(r"const AJAX_ACTIONS = \[(.*?)\];", bridge, re.S).group(1)
+post_actions = re.search(r"const POST_ACTIONS = \[(.*?)\];", bridge, re.S).group(1)
+for action in re.findall(r"'([a-z_]+)'", ajax_actions):
+    assert "add_action('wp_ajax_" + action + "'" in frontend, "bridge covers a non-existent legacy ajax action: " + action
+for action in re.findall(r"'([a-z_]+)'", post_actions):
+    assert "'" + action + "' =>" in frontend, "bridge covers a non-existent legacy admin-post action: " + action
+assert "[__CLASS__, 'guard_ajax'], 1)" in bridge and "[__CLASS__, 'guard_post'], 1)" in bridge, "bridge must run before legacy priority-10 callbacks"
+assert "Biawin_CRM_Customer_Service::" not in bridge, "bridge must never perform the Attach itself"
+assert not re.search(r"Lock_Service::|Transfer_Service::|Workflow::", bridge), "bridge must not call lock/transfer/workflow commands"
+assert "'ownership_locked' => 423" in bridge and "'unexpected' => 500" in bridge
+assert "تغییر مالکیت این فاکتور فقط از مسیر تطبیق مالکیت مجاز است." in bridge and "این پروفایل تا تعیین تکلیف پرونده تطبیق مالکیت فقط خواندنی است." in bridge
+print("PASS: C3.8 bridge hooks existing legacy actions at priority 1, never performs Attach or ownership commands, keeps failures as failures")
