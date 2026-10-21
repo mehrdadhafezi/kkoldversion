@@ -15,4 +15,5 @@ SERVER=$!
 trap 'kill $SERVER 2>/dev/null || true' EXIT
 for _ in $(seq 1 50); do curl -s "$BCRM_BASE/__test/fixture" > /dev/null && break; sleep 0.1; done
 node "$ROOT/tests/browser/ownership-flows.js"
+node "$ROOT/tests/browser/portal-review.js"
 echo "screenshots: $BCRM_SHOTS"
